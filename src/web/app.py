@@ -8,14 +8,16 @@ import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
+from collections import deque
 
-from flask import Flask, render_template_string, jsonify, request
+from flask import Flask, render_template_string, jsonify, request, Response
 
 app = Flask(__name__)
 
 # Track if agent is currently running
 agent_running = False
 agent_lock = threading.Lock()
+agent_logs = deque(maxlen=500)  # Keep last 500 lines
 DB_PATH = Path(__file__).parent.parent.parent / "data" / "research.db"
 
 HTML_TEMPLATE = """
@@ -145,6 +147,24 @@ HTML_TEMPLATE = """
             font-size: 0.9em;
             color: #8b949e;
         }
+        .log-container {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.85em;
+            display: none;
+        }
+        .log-container.visible { display: block; }
+        .log-line { margin: 2px 0; white-space: pre-wrap; word-break: break-all; }
+        .log-line.info { color: #58a6ff; }
+        .log-line.success { color: #3fb950; }
+        .log-line.error { color: #f85149; }
+        .log-line.warn { color: #d29922; }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -164,6 +184,8 @@ HTML_TEMPLATE = """
             <button class="run-btn" onclick="runAgent()" id="runBtn">▶ Run Agent</button>
             <span class="status-msg" id="statusMsg"></span>
         </div>
+
+        <div class="log-container" id="logContainer"></div>
 
         <div class="stats">
             <div class="stat-card">
@@ -269,37 +291,83 @@ HTML_TEMPLATE = """
         {% endif %}
     </div>
     <script>
+        let logInterval = null;
+        let lastLogIndex = 0;
+
         async function runAgent() {
             const btn = document.getElementById('runBtn');
             const msg = document.getElementById('statusMsg');
+            const logContainer = document.getElementById('logContainer');
 
             btn.disabled = true;
             btn.textContent = '⏳ Running...';
-            msg.textContent = 'Agent started, this may take a few minutes...';
+            msg.textContent = 'Agent started...';
+            logContainer.innerHTML = '';
+            logContainer.classList.add('visible');
+            lastLogIndex = 0;
+
+            // Start polling for logs
+            logInterval = setInterval(fetchLogs, 1000);
 
             try {
                 const response = await fetch('/api/run', { method: 'POST' });
                 const data = await response.json();
 
+                // Stop polling
+                clearInterval(logInterval);
+                // Fetch final logs
+                await fetchLogs();
+
                 if (data.success) {
                     msg.textContent = '✓ Agent completed! Refreshing...';
-                    setTimeout(() => location.reload(), 2000);
+                    setTimeout(() => location.reload(), 3000);
                 } else if (data.running) {
                     msg.textContent = '⚠ Agent is already running';
-                    setTimeout(() => {
-                        btn.disabled = false;
-                        btn.textContent = '▶ Run Agent';
-                        msg.textContent = '';
-                    }, 3000);
+                    // Keep polling if already running
+                    logInterval = setInterval(fetchLogs, 1000);
                 } else {
                     msg.textContent = '✗ Error: ' + (data.error || 'Unknown error');
                     btn.disabled = false;
                     btn.textContent = '▶ Run Agent';
                 }
             } catch (e) {
+                clearInterval(logInterval);
                 msg.textContent = '✗ Error: ' + e.message;
                 btn.disabled = false;
                 btn.textContent = '▶ Run Agent';
+            }
+        }
+
+        async function fetchLogs() {
+            try {
+                const response = await fetch('/api/logs?from=' + lastLogIndex);
+                const data = await response.json();
+                const logContainer = document.getElementById('logContainer');
+
+                if (data.logs && data.logs.length > 0) {
+                    data.logs.forEach(log => {
+                        const line = document.createElement('div');
+                        line.className = 'log-line';
+
+                        // Color based on content
+                        if (log.includes('error') || log.includes('Error') || log.includes('failed')) {
+                            line.classList.add('error');
+                        } else if (log.includes('success') || log.includes('✓') || log.includes('completed')) {
+                            line.classList.add('success');
+                        } else if (log.includes('warning') || log.includes('⚠')) {
+                            line.classList.add('warn');
+                        } else if (log.includes('→') || log.includes('...')) {
+                            line.classList.add('info');
+                        }
+
+                        line.textContent = log;
+                        logContainer.appendChild(line);
+                    });
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                    lastLogIndex = data.index;
+                }
+            } catch (e) {
+                console.error('Failed to fetch logs:', e);
             }
         }
     </script>
@@ -394,24 +462,46 @@ def runs():
 @app.route("/api/run", methods=["POST"])
 def run_agent():
     """Trigger agent run."""
-    global agent_running
+    global agent_running, agent_logs
 
     with agent_lock:
         if agent_running:
             return jsonify({"running": True, "message": "Agent is already running"})
         agent_running = True
+        agent_logs.clear()
 
     def run_in_background():
         global agent_running
         try:
-            # Run the agent script
-            subprocess.run(
+            agent_logs.append("Starting pump research agent...")
+
+            # Run the agent script and capture output
+            process = subprocess.Popen(
                 ["./scripts/run_agent.sh", "--skip-setup"],
                 cwd=Path(__file__).parent.parent.parent,
-                timeout=600  # 10 minute timeout
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
             )
+
+            # Stream output to logs
+            for line in iter(process.stdout.readline, ''):
+                if line:
+                    agent_logs.append(line.rstrip())
+
+            process.wait(timeout=600)
+
+            if process.returncode == 0:
+                agent_logs.append("✓ Agent completed successfully")
+            else:
+                agent_logs.append(f"✗ Agent exited with code {process.returncode}")
+
+        except subprocess.TimeoutExpired:
+            agent_logs.append("✗ Agent timed out after 10 minutes")
+            process.kill()
         except Exception as e:
-            print(f"Agent error: {e}")
+            agent_logs.append(f"✗ Error: {str(e)}")
         finally:
             with agent_lock:
                 agent_running = False
@@ -422,6 +512,14 @@ def run_agent():
     thread.join(timeout=600)  # Wait for completion
 
     return jsonify({"success": True})
+
+@app.route("/api/logs")
+def get_logs():
+    """Get agent logs since given index."""
+    from_index = int(request.args.get('from', 0))
+    logs_list = list(agent_logs)
+    new_logs = logs_list[from_index:] if from_index < len(logs_list) else []
+    return jsonify({"logs": new_logs, "index": len(logs_list)})
 
 @app.route("/api/status")
 def agent_status():
