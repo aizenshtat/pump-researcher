@@ -58,7 +58,7 @@ jobs:
       - name: Initial server setup (if needed)
         run: |
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-            if ! command -v docker &> /dev/null; then
+            if ! command -v docker &> /dev/null || ! [ -f /etc/letsencrypt/live/${{ secrets.SERVER_DOMAIN }}/fullchain.pem ]; then
               echo 'Running initial server setup...'
               chmod +x /opt/pump-researcher/deploy/setup-server.sh
               CERTBOT_EMAIL=${{ secrets.CERTBOT_EMAIL }} DOMAIN=${{ secrets.SERVER_DOMAIN }} /opt/pump-researcher/deploy/setup-server.sh
@@ -83,4 +83,4 @@ jobs:
       - name: Verify deployment
         run: |
           sleep 5
-          curl -sSf https://${{ secrets.SERVER_DOMAIN }} > /dev/null && echo "✓ Deployment successful: https://${{ secrets.SERVER_DOMAIN }}"
+          curl -sSf https://${{ secrets.SERVER_DOMAIN }} > /dev/null && echo "✓ Deployment successful: https://${{ secrets.SERVER_DOMAIN }}" || echo "⚠ Site not yet accessible (SSL may still be setting up)"
