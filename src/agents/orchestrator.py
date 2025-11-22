@@ -30,65 +30,107 @@ You are the Pump Research Agent orchestrator. Execute the following workflow:
 {detection_prompt}
 
 ## Phase 2: Investigate Each Pump
-For each detected pump, investigate using all available sources:
-- Reddit MCP: Search for posts about the token
-- Twitter MCP: Search for tweets and announcements
-- Discord MCP: Check crypto servers for mentions
-- Web Search: Look for news articles and announcements
-- Grok MCP: Get AI analysis of the pump
+For each detected pump, you MUST search for the actual news/event that caused the pump. Use these MCP tools:
+
+### Twitter/X (REQUIRED)
+Use the Twitter MCP to search for:
+- `${{symbol}} announcement` - official announcements
+- `${{symbol}} news` - breaking news
+- `${{symbol}} listing` - exchange listings
+- `${{symbol}} partnership` - partnerships
+
+Look for tweets from official accounts, crypto news outlets, or influencers.
+
+### Reddit (REQUIRED)
+Use the Reddit MCP to search r/cryptocurrency, r/CryptoMoonShots, r/altcoin for:
+- Posts about the token in the last 24 hours
+- Any news, partnerships, or announcements
+
+### Web Search
+Search for recent news articles about the token.
+
+### What to Extract
+For EACH source, extract:
+- **content**: The actual news/tweet/post text (not just "search performed")
+- **source_url**: Direct link to the tweet/post/article
+- **relevance_score**: 0.0-1.0 how relevant to explaining the pump
+- **sentiment**: positive/negative/neutral
+
+Trigger types to identify:
+- exchange_listing: New exchange listing
+- partnership: Partnership announcement
+- whale_activity: Large purchases
+- influencer_mention: Celebrity/influencer tweet
+- technical_breakout: Chart pattern
+- news_article: News coverage
+- unknown: Cannot determine
 
 ## Phase 3: Save to Database
-For each pump and its findings, execute Python code to save to SQLite at {db_path}:
+First, check if pump already exists to avoid duplicates:
 
 ```python
 import sqlite3
 conn = sqlite3.connect('{db_path}')
 
-# Save pump
-cursor = conn.execute('''
-    INSERT INTO pumps (symbol, price_change_pct, time_window_minutes, price_at_detection, volume_change_pct, market_cap, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-''', (symbol, price_change_pct, time_window_minutes, price_at_detection, volume_change_pct, market_cap, source))
-pump_id = cursor.lastrowid
+# Check if already exists
+existing = conn.execute('SELECT id FROM pumps WHERE symbol = ? AND detected_at > datetime("now", "-1 hour")', (symbol,)).fetchone()
+if existing:
+    print(f"Pump for {{symbol}} already recorded recently, skipping")
+else:
+    # Save pump
+    cursor = conn.execute('''
+        INSERT INTO pumps (symbol, price_change_pct, time_window_minutes, price_at_detection, volume_change_pct, market_cap, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (symbol, price_change_pct, time_window_minutes, price_at_detection, volume_change_pct, market_cap, source))
+    pump_id = cursor.lastrowid
 
-# Save findings
-for finding in findings:
+    # Save findings (must have actual content, not just "search performed")
+    for finding in findings:
+        if finding.get('content') and len(finding['content']) > 50:
+            conn.execute('''
+                INSERT INTO findings (pump_id, source_type, source_url, content, relevance_score, sentiment)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (pump_id, finding['source_type'], finding.get('source_url'), finding['content'], finding.get('relevance_score', 0.5), finding.get('sentiment', 'neutral')))
+
+    # Save trigger
     conn.execute('''
-        INSERT INTO findings (pump_id, source_type, source_url, content, relevance_score, sentiment)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (pump_id, finding['source_type'], finding.get('source_url'), finding['content'], finding.get('relevance_score'), finding.get('sentiment')))
+        INSERT INTO news_triggers (pump_id, trigger_type, description, confidence)
+        VALUES (?, ?, ?, ?)
+    ''', (pump_id, trigger_type, description, confidence))
 
-# Save trigger
-conn.execute('''
-    INSERT INTO news_triggers (pump_id, trigger_type, description, confidence)
-    VALUES (?, ?, ?, ?)
-''', (pump_id, trigger_type, description, confidence))
+    conn.commit()
+    print(f"Saved pump {{symbol}} with id {{pump_id}}")
 
-conn.commit()
 conn.close()
 ```
 
 ## Phase 4: Send Telegram Alert
-For each pump, use the Telegram MCP to send a message with this format:
+Use the Telegram MCP `send_message` tool to send to chat ID from TELEGRAM_CHAT_ID environment variable.
 
-🚀 **PUMP DETECTED: ${{symbol}}**
+Message format:
+```
+🚀 PUMP DETECTED: ${{symbol}}
 
-📈 Price: +{{price_change_pct}}% ({{time_window}} min)
+📈 Price: +{{price_change_pct}}% (1h)
 💰 Current: ${{price}}
 
-🔍 **Trigger:** {{trigger_type}}
+🔍 Trigger: {{trigger_type}}
 {{description}}
 
-**Key Findings:**
-- {{finding_1}}
-- {{finding_2}}
-- {{finding_3}}
+Key Findings:
+- {{actual_tweet_or_news_text_1}}
+- {{actual_tweet_or_news_text_2}}
 
-Send to the chat configured in TELEGRAM_CHAT_ID.
+#crypto #{{symbol}}
+```
 
-## Execution
+## Execution Rules
 
-Execute all phases. If no pumps detected, skip phases 2-4.
+1. If no pumps detected, output "No pumps detected" and exit
+2. For each pump, you MUST actually call the Twitter and Reddit MCPs - don't just say you searched
+3. Findings must contain ACTUAL content from sources, not placeholders
+4. Save each pump to database with real findings
+5. Send Telegram message for each pump
 
 Return summary:
 ```json

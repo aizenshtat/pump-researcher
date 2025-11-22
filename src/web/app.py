@@ -567,15 +567,20 @@ def run_agent():
         agent_logs.clear()
         agent_logs.append("Starting pump research agent...")
 
-        # Start the agent process
-        agent_process = subprocess.Popen(
-            ["./scripts/run_agent.sh", "--skip-setup"],
-            cwd=Path(__file__).parent.parent.parent,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
-        )
+        try:
+            # Start the agent process
+            agent_process = subprocess.Popen(
+                ["./scripts/run_agent.sh", "--skip-setup"],
+                cwd=Path(__file__).parent.parent.parent,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+            agent_logs.append(f"Process started with PID {agent_process.pid}")
+        except Exception as e:
+            agent_logs.append(f"✗ Failed to start process: {str(e)}")
+            return jsonify({"success": False, "error": str(e)})
 
     def stream_output():
         global agent_process
