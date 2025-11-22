@@ -7,11 +7,6 @@ on:
       - completed
   workflow_dispatch:
 
-env:
-  SERVER_IP: 91.99.4.56
-  SERVER_USER: root
-  DOMAIN: pump-researcher.aizenshtat.eu
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -26,20 +21,20 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ env.SERVER_IP }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
 
       - name: Create deployment directory
         run: |
-          ssh ${{ env.SERVER_USER }}@${{ env.SERVER_IP }} "mkdir -p /opt/pump-researcher"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p /opt/pump-researcher"
 
       - name: Copy files to server
         run: |
           scp -r docker-compose.yml Dockerfile src scripts deploy \
-            ${{ env.SERVER_USER }}@${{ env.SERVER_IP }}:/opt/pump-researcher/
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/opt/pump-researcher/
 
       - name: Create .env file on server
         run: |
-          ssh ${{ env.SERVER_USER }}@${{ env.SERVER_IP }} "cat > /opt/pump-researcher/.env << 'EOF'
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cat > /opt/pump-researcher/.env << 'EOF'
           ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
           REDDIT_CLIENT_ID=${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET=${{ secrets.REDDIT_CLIENT_SECRET }}
@@ -64,17 +59,17 @@ jobs:
 
       - name: Initial server setup (if needed)
         run: |
-          ssh ${{ env.SERVER_USER }}@${{ env.SERVER_IP }} "
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
             if ! command -v docker &> /dev/null; then
               echo 'Running initial server setup...'
               chmod +x /opt/pump-researcher/deploy/setup-server.sh
-              CERTBOT_EMAIL=${{ secrets.CERTBOT_EMAIL }} /opt/pump-researcher/deploy/setup-server.sh
+              CERTBOT_EMAIL=${{ secrets.CERTBOT_EMAIL }} DOMAIN=${{ secrets.SERVER_DOMAIN }} /opt/pump-researcher/deploy/setup-server.sh
             fi
           "
 
       - name: Build and deploy containers
         run: |
-          ssh ${{ env.SERVER_USER }}@${{ env.SERVER_IP }} "
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
             cd /opt/pump-researcher
             docker compose build
             docker compose up -d web
@@ -83,11 +78,11 @@ jobs:
 
       - name: Setup cron for hourly agent runs
         run: |
-          ssh ${{ env.SERVER_USER }}@${{ env.SERVER_IP }} "
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
             echo '0 * * * * cd /opt/pump-researcher && docker compose run --rm pump-researcher >> /var/log/pump-researcher.log 2>&1' | crontab -
           "
 
       - name: Verify deployment
         run: |
           sleep 5
-          curl -sSf https://${{ env.DOMAIN }} > /dev/null && echo "✓ Deployment successful: https://${{ env.DOMAIN }}"
+          curl -sSf https://${{ secrets.SERVER_DOMAIN }} > /dev/null && echo "✓ Deployment successful: https://${{ secrets.SERVER_DOMAIN }}"

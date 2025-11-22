@@ -2,7 +2,7 @@
 # Server setup script - run once to initialize the server
 set -e
 
-DOMAIN="pump-researcher.aizenshtat.eu"
+DOMAIN="${DOMAIN:-pump-researcher.aizenshtat.eu}"
 EMAIL="${CERTBOT_EMAIL:-admin@aizenshtat.eu}"
 
 echo "=== Setting up server for $DOMAIN ==="
@@ -21,10 +21,10 @@ mkdir -p /var/www/certbot
 mkdir -p /opt/pump-researcher/data
 
 # Copy nginx config (without SSL first for certbot)
-cat > /etc/nginx/sites-available/pump-researcher << 'EOF'
+cat > /etc/nginx/sites-available/pump-researcher << EOF
 server {
     listen 80;
-    server_name pump-researcher.aizenshtat.eu;
+    server_name $DOMAIN;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -33,10 +33,10 @@ server {
     location / {
         proxy_pass http://localhost:5000;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
 EOF
