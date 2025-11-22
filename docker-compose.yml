@@ -101,8 +101,6 @@ services:
       - FLASK_ENV=production
     command: python src/web/app.py
     restart: unless-stopped
-    profiles:
-      - web
 
 volumes:
   data:
