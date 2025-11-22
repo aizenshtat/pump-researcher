@@ -21,12 +21,15 @@ docker compose run --rm pump-researcher
 
 For GitHub Actions deployment, add to Settings > Secrets > Actions:
 
-| Secret | Description |
-|--------|-------------|
-| `SERVER_SSH_KEY` | SSH private key for server deployment |
-| `CERTBOT_EMAIL` | Email for Let's Encrypt SSL |
-| `ANTHROPIC_API_KEY` | Claude Code API key |
-| `TELEGRAM_CHAT_ID` | Telegram channel for alerts |
+| Secret | Description | Example |
+|--------|-------------|---------|
+| `SERVER_IP` | Server IP address | `91.99.4.56` |
+| `SERVER_USER` | SSH username | `root` |
+| `SERVER_DOMAIN` | Domain for SSL | `pump-researcher.aizenshtat.eu` |
+| `SERVER_SSH_KEY` | SSH private key | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
+| `CERTBOT_EMAIL` | Email for Let's Encrypt | `admin@example.com` |
+| `ANTHROPIC_API_KEY` | Claude Code API key | |
+| `TELEGRAM_CHAT_ID` | Telegram channel for alerts | |
 
 ### MCP Server Credentials
 
