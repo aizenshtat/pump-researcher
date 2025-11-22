@@ -319,8 +319,9 @@ HTML_TEMPLATE = """
                 await fetchLogs();
 
                 if (data.success) {
-                    msg.textContent = '✓ Agent completed! Refreshing...';
-                    setTimeout(() => location.reload(), 3000);
+                    msg.textContent = '✓ Agent completed!';
+                    btn.disabled = false;
+                    btn.textContent = '▶ Run Agent';
                 } else if (data.running) {
                     msg.textContent = '⚠ Agent is already running';
                     // Keep polling if already running

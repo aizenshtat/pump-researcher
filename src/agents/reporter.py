@@ -73,6 +73,7 @@ def get_telegram_report_prompt(pump: dict, investigation: dict) -> str:
         findings_summary += f"\n- [{f.get('source_type', 'unknown').upper()}] {f.get('content', '')[:100]}"
 
     trigger = investigation.get("likely_trigger", {})
+    trigger_type = trigger.get('trigger_type', 'Unknown').replace('_', ' ').title()
 
     return f"""
 Use the Telegram MCP to send this research finding to the configured chat.
@@ -85,7 +86,7 @@ Use the Telegram MCP to send this research finding to the configured chat.
 💰 **Price:** ${pump.get('price_at_detection', 'N/A')}
 📊 **Volume Change:** {pump.get('volume_change_pct', 'N/A')}%
 
-🔍 **Likely Trigger:** {trigger.get('trigger_type', 'Unknown').replace('_', ' ').title()}
+🔍 **Likely Trigger:** {trigger_type}
 📝 {trigger.get('description', 'No description available')}
 🎯 **Confidence:** {trigger.get('confidence', 0) * 100:.0f}%
 
