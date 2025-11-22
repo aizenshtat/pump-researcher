@@ -8,6 +8,9 @@ services:
       - .env
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Pump detection parameters
+      - PUMP_THRESHOLD_PCT=${PUMP_THRESHOLD_PCT:-5.0}
+      - PUMP_TIME_WINDOW_MINUTES=${PUMP_TIME_WINDOW_MINUTES:-60}
       # Reddit
       - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
       - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
