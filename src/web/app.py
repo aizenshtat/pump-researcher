@@ -4,12 +4,18 @@ Simple Flask web interface for viewing pump research results.
 
 import json
 import sqlite3
+import subprocess
+import threading
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, render_template_string
+from flask import Flask, render_template_string, jsonify, request
 
 app = Flask(__name__)
+
+# Track if agent is currently running
+agent_running = False
+agent_lock = threading.Lock()
 DB_PATH = Path(__file__).parent.parent.parent / "data" / "research.db"
 
 HTML_TEMPLATE = """
@@ -117,6 +123,28 @@ HTML_TEMPLATE = """
             border: 1px solid #30363d;
         }
         .tab.active { background: #58a6ff; color: #0d1117; border-color: #58a6ff; }
+        .run-btn {
+            padding: 10px 20px;
+            background: #238636;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-left: auto;
+        }
+        .run-btn:hover { background: #2ea043; }
+        .run-btn:disabled { background: #30363d; cursor: not-allowed; }
+        .header-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .status-msg {
+            margin-left: 10px;
+            font-size: 0.9em;
+            color: #8b949e;
+        }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -131,7 +159,11 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h1>🔍 Pump Researcher</h1>
+        <div class="header-row">
+            <h1 style="margin: 0;">🔍 Pump Researcher</h1>
+            <button class="run-btn" onclick="runAgent()" id="runBtn">▶ Run Agent</button>
+            <span class="status-msg" id="statusMsg"></span>
+        </div>
 
         <div class="stats">
             <div class="stat-card">
@@ -236,6 +268,41 @@ HTML_TEMPLATE = """
             </div>
         {% endif %}
     </div>
+    <script>
+        async function runAgent() {
+            const btn = document.getElementById('runBtn');
+            const msg = document.getElementById('statusMsg');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Running...';
+            msg.textContent = 'Agent started, this may take a few minutes...';
+
+            try {
+                const response = await fetch('/api/run', { method: 'POST' });
+                const data = await response.json();
+
+                if (data.success) {
+                    msg.textContent = '✓ Agent completed! Refreshing...';
+                    setTimeout(() => location.reload(), 2000);
+                } else if (data.running) {
+                    msg.textContent = '⚠ Agent is already running';
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.textContent = '▶ Run Agent';
+                        msg.textContent = '';
+                    }, 3000);
+                } else {
+                    msg.textContent = '✗ Error: ' + (data.error || 'Unknown error');
+                    btn.disabled = false;
+                    btn.textContent = '▶ Run Agent';
+                }
+            } catch (e) {
+                msg.textContent = '✗ Error: ' + e.message;
+                btn.disabled = false;
+                btn.textContent = '▶ Run Agent';
+            }
+        }
+    </script>
 </body>
 </html>
 """
@@ -323,6 +390,43 @@ def runs():
                                   runs=runs_list,
                                   stats=get_stats(),
                                   tab="runs")
+
+@app.route("/api/run", methods=["POST"])
+def run_agent():
+    """Trigger agent run."""
+    global agent_running
+
+    with agent_lock:
+        if agent_running:
+            return jsonify({"running": True, "message": "Agent is already running"})
+        agent_running = True
+
+    def run_in_background():
+        global agent_running
+        try:
+            # Run the agent script
+            subprocess.run(
+                ["./scripts/run_agent.sh", "--skip-setup"],
+                cwd=Path(__file__).parent.parent.parent,
+                timeout=600  # 10 minute timeout
+            )
+        except Exception as e:
+            print(f"Agent error: {e}")
+        finally:
+            with agent_lock:
+                agent_running = False
+
+    # Start agent in background thread
+    thread = threading.Thread(target=run_in_background)
+    thread.start()
+    thread.join(timeout=600)  # Wait for completion
+
+    return jsonify({"success": True})
+
+@app.route("/api/status")
+def agent_status():
+    """Check if agent is running."""
+    return jsonify({"running": agent_running})
 
 if __name__ == "__main__":
     print(f"Database path: {DB_PATH}")
