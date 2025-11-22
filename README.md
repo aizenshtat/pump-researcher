@@ -1,84 +1,84 @@
 # Pump Researcher
 
-Autonomous AI agent that detects crypto pumps and investigates their news triggers using Claude Code and multiple data sources.
-
-## Features
-
-- **Pump Detection**: Monitors Binance + CoinMarketCap for tokens with ≥5% gains in 1 hour
-- **Multi-source Investigation**: Searches Reddit, Twitter, Discord, Telegram, web, and Grok/xAI
-- **Automated Reporting**: Saves findings to SQLite and sends alerts to Telegram
-- **Flexible Deployment**: Run locally, via Docker, or scheduled in GitHub Actions
+Autonomous AI agent that detects crypto pumps and investigates their news triggers using Claude Code and MCP servers.
 
 ## Quick Start
 
-### Prerequisites
+```bash
+cp .env.example .env
+# Fill in API credentials
+./scripts/run_agent.sh
+```
 
-- Node.js 20+
-- Python 3.11+
-- Docker (optional)
+Or with Docker:
+```bash
+docker compose run --rm pump-researcher
+```
 
-### Setup
+## Configuration
 
-1. **Clone and configure:**
-   ```bash
-   git clone <repo-url>
-   cd pump-researcher
-   cp .env.example .env
-   ```
+### Required Secrets
 
-2. **Fill in API credentials** in `.env` (see [docs/MCP_SETUP.md](docs/MCP_SETUP.md) for details)
+For GitHub Actions deployment, add to Settings > Secrets > Actions:
 
-3. **Run the agent:**
+| Secret | Description |
+|--------|-------------|
+| `SERVER_SSH_KEY` | SSH private key for server deployment |
+| `CERTBOT_EMAIL` | Email for Let's Encrypt SSL |
+| `ANTHROPIC_API_KEY` | Claude Code API key |
+| `TELEGRAM_CHAT_ID` | Telegram channel for alerts |
 
-   **Local (installs dependencies automatically):**
-   ```bash
-   ./scripts/run_agent.sh
-   ```
+### MCP Server Credentials
 
-   **Docker:**
-   ```bash
-   docker compose run --rm pump-researcher
-   ```
+| Service | Get credentials at | Variables |
+|---------|-------------------|-----------|
+| Reddit | https://reddit.com/prefs/apps | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` |
+| Telegram | https://my.telegram.org | `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_PHONE_NUMBER` |
+| Twitter/X | Account credentials | `TWITTER_USERNAME`, `TWITTER_PASSWORD`, `TWITTER_EMAIL` |
+| Discord | Account credentials | `DISCORD_EMAIL`, `DISCORD_PASSWORD` |
+| CoinMarketCap | https://coinmarketcap.com/api | `COINMARKETCAP_API_KEY`, `COINMARKETCAP_SUBSCRIPTION_LEVEL` |
+| Binance | https://www.binance.com/en/my/settings/api-management | `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `BINANCE_TESTNET` |
+| Grok/xAI | https://console.x.ai | `XAI_API_KEY` |
 
-## Deployment Options
-
-### Local
+### Pump Detection Parameters
 
 ```bash
-# Full run (setup + agent)
-./scripts/run_agent.sh
+# Environment variables (or CLI flags)
+PUMP_THRESHOLD_PCT=5.0        # --threshold
+PUMP_TIME_WINDOW_MINUTES=60   # --window
 
-# Setup only
-./scripts/run_agent.sh --setup-only
+# Examples
+./scripts/run_agent.sh --threshold 10 --window 60    # 10% in 1 hour
+./scripts/run_agent.sh --threshold 20 --window 1440  # 20% in 24 hours
+```
 
-# Run only (skip setup)
-./scripts/run_agent.sh --skip-setup
+## Deployment
+
+### Local
+```bash
+./scripts/run_agent.sh              # Full run
+./scripts/run_agent.sh --setup-only # Setup only
+./scripts/run_agent.sh --skip-setup # Agent only
 ```
 
 ### Docker
-
 ```bash
-# One-off run
-docker compose run --rm pump-researcher
-
-# Build image
-docker compose build
-
-# Scheduled (hourly via ofelia)
-docker compose up -d scheduler
-
-# Scheduled (hourly via cron)
-docker compose --profile cron up -d cron-scheduler
+docker compose run --rm pump-researcher  # One-off run
+docker compose up -d web                 # Web interface at :5000
+docker compose up -d scheduler           # Hourly scheduled runs
 ```
 
-### GitHub Actions (CI/CD)
+### Server (CI/CD)
 
-1. Add secrets to repository (Settings > Secrets > Actions):
-   - `ANTHROPIC_API_KEY`
-   - `TELEGRAM_CHAT_ID`
-   - All MCP credentials (see `.env.example`)
+After adding secrets, go to Actions > Deploy to Server > Run workflow.
 
-2. Agent runs automatically every hour, or trigger manually via Actions tab
+This will:
+1. Install Docker, nginx, certbot on first run
+2. Get SSL certificate for your domain
+3. Deploy and start containers
+4. Setup hourly cron job
+
+Web interface: https://pump-researcher.aizenshtat.eu
 
 ## Architecture
 
@@ -89,45 +89,34 @@ docker compose --profile cron up -d cron-scheduler
 └─────────────────┘     └──────────────────┘     └─────────────────┘
 ```
 
-### Data Sources
+**Data Sources:** Binance, CoinMarketCap, Reddit, Twitter, Discord, Telegram, Grok/xAI, Web Search
 
-| Type | Sources |
-|------|---------|
-| Market Data | Binance, CoinMarketCap |
-| Social | Reddit, Twitter/X, Discord, Telegram |
-| AI Analysis | Grok/xAI, Web Search |
-
-### Database Schema
-
-Findings stored in `data/research.db`:
-- `pumps` - Detected price movements
-- `findings` - Individual news/social findings
-- `news_triggers` - Identified causes with confidence scores
-- `notifications` - Telegram message log
-- `agent_runs` - Execution history
+**Database:** SQLite at `data/research.db` with tables: `pumps`, `findings`, `news_triggers`, `notifications`, `agent_runs`
 
 ## Project Structure
 
 ```
-.
-├── .claude/settings.json      # MCP server configurations
-├── .env.example               # Environment template
-├── .github/workflows/         # CI/CD workflows
-├── data/                      # SQLite database (gitignored)
-├── docs/MCP_SETUP.md          # Detailed setup guide
+├── .claude/settings.json       # MCP server configs
+├── .env.example                # Environment template
+├── .github/workflows/          # CI/CD (agent, deploy)
+├── deploy/                     # nginx, server setup
 ├── scripts/
-│   ├── run_agent.sh           # Main entry point
-│   └── setup-mcp-servers.sh   # MCP installation
+│   ├── run_agent.sh            # Main entry point
+│   └── setup-mcp-servers.sh    # MCP installation
 ├── src/
-│   ├── agents/                # Agent modules
-│   └── db/                    # Database schema
+│   ├── agents/                 # Detection, investigation, reporting
+│   ├── db/                     # Schema and init
+│   └── web/                    # Flask dashboard
 ├── Dockerfile
 └── docker-compose.yml
 ```
 
-## Documentation
+## Troubleshooting
 
-- [MCP Setup Guide](docs/MCP_SETUP.md) - Detailed setup and configuration
+- **MCP server not loading**: Check env vars, run `which uvx` / `which npx`
+- **Telegram auth**: Run `fast-mcp-telegram-setup`
+- **Discord fails**: Run `uvx playwright install chromium`
+- **SSH deployment fails**: Ensure `SERVER_SSH_KEY` is the private key (starts with `-----BEGIN`)
 
 ## License
 
