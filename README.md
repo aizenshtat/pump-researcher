@@ -2,6 +2,17 @@
 
 Autonomous AI agent that detects crypto pumps and investigates their news triggers using Claude Code and MCP servers.
 
+## Features
+
+- **Pump Detection** - Monitors Binance and CoinMarketCap for significant price movements (default: ≥5% in 60 minutes)
+- **Multi-Source Investigation** - Searches Reddit, Twitter/X, Discord, Telegram, and web for news triggers
+- **AI Analysis** - Uses Claude to correlate pumps with news events and assess confidence
+- **Real-time Dashboard** - Web UI with live agent logs, pump history, and findings
+- **Automated Alerts** - Sends findings to Telegram channel
+- **Scheduled Runs** - Hourly cron job via server deployment
+
+**Live Demo:** https://pump-researcher.aizenshtat.eu
+
 ## Quick Start
 
 ```bash
@@ -12,7 +23,8 @@ cp .env.example .env
 
 Or with Docker:
 ```bash
-docker compose run --rm pump-researcher
+docker compose up -d web              # Start web dashboard at :5000
+docker compose run --rm pump-researcher  # Run agent once
 ```
 
 ## Configuration
@@ -37,7 +49,7 @@ For GitHub Actions deployment, add to Settings > Secrets > Actions:
 |---------|-------------------|-----------|
 | Reddit | https://reddit.com/prefs/apps | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` |
 | Telegram | https://my.telegram.org | `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_PHONE_NUMBER` |
-| Twitter/X | Account credentials | `TWITTER_USERNAME`, `TWITTER_PASSWORD`, `TWITTER_EMAIL` |
+| Twitter/X | https://developer.twitter.com | `TWITTER_API_KEY`, `TWITTER_API_SECRET`, `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_TOKEN_SECRET` |
 | Discord | Account credentials | `DISCORD_EMAIL`, `DISCORD_PASSWORD` |
 | CoinMarketCap | https://coinmarketcap.com/api | `COINMARKETCAP_API_KEY`, `COINMARKETCAP_SUBSCRIPTION_LEVEL` |
 | Binance | https://www.binance.com/en/my/settings/api-management | `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `BINANCE_TESTNET` |
@@ -82,6 +94,17 @@ This will:
 4. Setup hourly cron job
 
 Web interface: https://pump-researcher.aizenshtat.eu
+
+## Web Dashboard
+
+The web interface provides:
+
+- **Stats Overview** - Pumps detected, findings, triggers, agent runs
+- **Run Agent Button** - Trigger agent manually with real-time log streaming
+- **Pumps View** - All detected pumps with triggers and findings
+- **Agent Runs** - History of all agent executions
+
+Access locally at `http://localhost:5000` or via your deployed domain.
 
 ## Architecture
 
