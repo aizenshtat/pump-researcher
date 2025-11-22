@@ -507,6 +507,19 @@ HTML_TEMPLATE = """
                         const line = document.createElement('div');
                         line.className = 'log-line';
 
+                        // Try to parse and format JSON
+                        let displayText = log;
+                        if (log.trim().startsWith('{')) {
+                            try {
+                                const parsed = JSON.parse(log);
+                                displayText = JSON.stringify(parsed, null, 2);
+                                line.style.whiteSpace = 'pre';
+                                line.style.fontSize = '0.75em';
+                            } catch (e) {
+                                // Not valid JSON, display as-is
+                            }
+                        }
+
                         if (log.includes('error') || log.includes('Error') || log.includes('failed') || log.includes('✗')) {
                             line.classList.add('error');
                         } else if (log.includes('success') || log.includes('✓') || log.includes('completed')) {
@@ -517,7 +530,7 @@ HTML_TEMPLATE = """
                             line.classList.add('header');
                         }
 
-                        line.textContent = log;
+                        line.textContent = displayText;
                         logContainer.appendChild(line);
                     });
                 } else {
