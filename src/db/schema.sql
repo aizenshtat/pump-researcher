@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     pumps_detected INTEGER DEFAULT 0,
     findings_count INTEGER DEFAULT 0,
     status TEXT DEFAULT 'running', -- 'running', 'completed', 'failed'
-    error_message TEXT
+    error_message TEXT,
+    logs TEXT
 );
 
 -- Indexes for common queries

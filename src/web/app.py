@@ -138,6 +138,16 @@ HTML_TEMPLATE = """
         }
         .run-btn:hover { background: #2ea043; }
         .run-btn:disabled { background: #30363d; cursor: not-allowed; }
+        .view-logs-btn {
+            padding: 4px 8px;
+            background: #21262d;
+            color: #58a6ff;
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+        .view-logs-btn:hover { background: #30363d; }
         .header-row {
             display: flex;
             align-items: center;
@@ -322,6 +332,7 @@ HTML_TEMPLATE = """
                             <th>Pumps</th>
                             <th>Findings</th>
                             <th>Duration</th>
+                            <th>Logs</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -332,16 +343,18 @@ HTML_TEMPLATE = """
                             <td>{{ run.pumps_detected }}</td>
                             <td>{{ run.findings_count }}</td>
                             <td>{{ run.duration or '-' }}</td>
+                            <td><button class="view-logs-btn" onclick="viewRunLogs({{ run.id }})">View</button></td>
                         </tr>
                         {% endfor %}
                         {% if not runs %}
                         <tr>
-                            <td colspan="5" style="text-align: center; color: #8b949e;">No runs yet</td>
+                            <td colspan="6" style="text-align: center; color: #8b949e;">No runs yet</td>
                         </tr>
                         {% endif %}
                     </tbody>
                 </table>
             </div>
+            <div class="log-container" id="runLogContainer"></div>
         {% endif %}
     </div>
     <script>
@@ -472,6 +485,47 @@ HTML_TEMPLATE = """
             div.appendChild(header);
             div.appendChild(contentDiv);
             return div;
+        }
+
+        async function viewRunLogs(runId) {
+            const logContainer = document.getElementById('runLogContainer');
+            logContainer.innerHTML = 'Loading logs...';
+            logContainer.classList.add('visible');
+
+            try {
+                const response = await fetch('/api/run/' + runId + '/logs');
+                const data = await response.json();
+
+                if (data.error) {
+                    logContainer.innerHTML = 'Error: ' + data.error;
+                    return;
+                }
+
+                logContainer.innerHTML = '';
+                if (data.logs && data.logs.length > 0) {
+                    data.logs.forEach(log => {
+                        const line = document.createElement('div');
+                        line.className = 'log-line';
+
+                        if (log.includes('error') || log.includes('Error') || log.includes('failed') || log.includes('✗')) {
+                            line.classList.add('error');
+                        } else if (log.includes('success') || log.includes('✓') || log.includes('completed')) {
+                            line.classList.add('success');
+                        } else if (log.includes('warning') || log.includes('⚠')) {
+                            line.classList.add('warn');
+                        } else if (log.includes('===') || log.includes('Starting') || log.includes('Generating')) {
+                            line.classList.add('header');
+                        }
+
+                        line.textContent = log;
+                        logContainer.appendChild(line);
+                    });
+                } else {
+                    logContainer.innerHTML = 'No logs available for this run';
+                }
+            } catch (e) {
+                logContainer.innerHTML = 'Error loading logs: ' + e.message;
+            }
         }
     </script>
 </body>
@@ -647,17 +701,18 @@ def run_agent():
             agent_logs.append(f"✗ Error: {str(e)}")
             status = "failed"
 
-        # Update agent run record
+        # Update agent run record with logs
         if run_id:
             try:
                 conn = get_db()
                 if conn:
+                    logs_text = '\n'.join(agent_logs)
                     conn.execute("""
                         UPDATE agent_runs
                         SET status = ?, completed_at = datetime('now'),
-                            pumps_detected = ?, findings_count = ?
+                            pumps_detected = ?, findings_count = ?, logs = ?
                         WHERE id = ?
-                    """, (status, pumps_detected, findings_count, run_id))
+                    """, (status, pumps_detected, findings_count, logs_text, run_id))
                     conn.commit()
                     conn.close()
             except Exception as e:
@@ -682,6 +737,22 @@ def agent_status():
     """Check if agent is running."""
     running = agent_process is not None and agent_process.poll() is None
     return jsonify({"running": running})
+
+@app.route("/api/run/<int:run_id>/logs")
+def get_run_logs(run_id):
+    """Get logs for a specific agent run."""
+    conn = get_db()
+    if not conn:
+        return jsonify({"error": "Database not found"}), 404
+
+    row = conn.execute("SELECT logs FROM agent_runs WHERE id = ?", (run_id,)).fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({"error": "Run not found"}), 404
+
+    logs = row["logs"] or ""
+    return jsonify({"logs": logs.split('\n') if logs else []})
 
 if __name__ == "__main__":
     print(f"Database path: {DB_PATH}")
