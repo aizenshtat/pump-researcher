@@ -154,7 +154,7 @@ HTML_TEMPLATE = """
             border-radius: 8px;
             padding: 15px;
             margin-bottom: 20px;
-            max-height: 400px;
+            max-height: 600px;
             overflow-y: auto;
             font-family: monospace;
             font-size: 0.85em;
@@ -166,6 +166,35 @@ HTML_TEMPLATE = """
         .log-line.success { color: #3fb950; }
         .log-line.error { color: #f85149; }
         .log-line.warn { color: #d29922; }
+        .log-line.header { color: #f0883e; font-weight: bold; margin-top: 10px; }
+        .collapsible {
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            margin: 5px 0;
+            overflow: hidden;
+        }
+        .collapsible-header {
+            padding: 8px 12px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .collapsible-header:hover { background: #30363d; }
+        .collapsible-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            padding: 0 12px;
+        }
+        .collapsible.expanded .collapsible-content {
+            max-height: 500px;
+            overflow-y: auto;
+            padding: 12px;
+        }
+        .collapsible-arrow { transition: transform 0.3s; }
+        .collapsible.expanded .collapsible-arrow { transform: rotate(90deg); }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -364,6 +393,10 @@ HTML_TEMPLATE = """
             }
         }
 
+        let inCollapsible = false;
+        let collapsibleContent = [];
+        let collapsibleTitle = '';
+
         async function fetchLogs() {
             try {
                 const response = await fetch('/api/logs?from=' + lastLogIndex);
@@ -372,16 +405,37 @@ HTML_TEMPLATE = """
 
                 if (data.logs && data.logs.length > 0) {
                     data.logs.forEach(log => {
+                        // Check for collapsible section markers
+                        if (log.includes('=== PROMPT ===')) {
+                            inCollapsible = true;
+                            collapsibleTitle = '📋 Prompt (click to expand)';
+                            collapsibleContent = [];
+                            return;
+                        } else if (log.includes('=== END PROMPT ===')) {
+                            inCollapsible = false;
+                            // Create collapsible element
+                            const collapsible = createCollapsible(collapsibleTitle, collapsibleContent);
+                            logContainer.appendChild(collapsible);
+                            return;
+                        }
+
+                        if (inCollapsible) {
+                            collapsibleContent.push(log);
+                            return;
+                        }
+
                         const line = document.createElement('div');
                         line.className = 'log-line';
 
                         // Color based on content
-                        if (log.includes('error') || log.includes('Error') || log.includes('failed')) {
+                        if (log.includes('error') || log.includes('Error') || log.includes('failed') || log.includes('✗')) {
                             line.classList.add('error');
                         } else if (log.includes('success') || log.includes('✓') || log.includes('completed')) {
                             line.classList.add('success');
                         } else if (log.includes('warning') || log.includes('⚠')) {
                             line.classList.add('warn');
+                        } else if (log.includes('===') || log.includes('Starting') || log.includes('Generating')) {
+                            line.classList.add('header');
                         } else if (log.includes('→') || log.includes('...')) {
                             line.classList.add('info');
                         }
@@ -395,6 +449,21 @@ HTML_TEMPLATE = """
             } catch (e) {
                 console.error('Failed to fetch logs:', e);
             }
+        }
+
+        function createCollapsible(title, content) {
+            const div = document.createElement('div');
+            div.className = 'collapsible';
+            div.innerHTML = `
+                <div class="collapsible-header" onclick="this.parentElement.classList.toggle('expanded')">
+                    <span>${title}</span>
+                    <span class="collapsible-arrow">▶</span>
+                </div>
+                <div class="collapsible-content">
+                    <pre style="margin:0;white-space:pre-wrap;word-break:break-all;">${content.join('\n')}</pre>
+                </div>
+            `;
+            return div;
         }
     </script>
 </body>

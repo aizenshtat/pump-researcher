@@ -104,16 +104,24 @@ echo "Generating prompt..."
 python3 src/agents/orchestrator.py $ORCH_ARGS > "$PROMPT_FILE"
 echo "Prompt generated ($(wc -c < "$PROMPT_FILE") bytes)"
 
-# Execute with Claude Code in headless mode
+# Show the prompt
+echo ""
+echo "=== PROMPT ==="
+cat "$PROMPT_FILE"
+echo ""
+echo "=== END PROMPT ==="
+echo ""
+
+# Execute with Claude Code in headless mode (no --print to see all output)
 # If running as root, switch to agent user (required for --dangerously-skip-permissions)
 echo "Starting Claude Code..."
 if [ "$(id -u)" = "0" ] && id agent &>/dev/null; then
     chown agent:agent "$PROMPT_FILE"
     # Also need to give agent access to app directory
     chown -R agent:agent /app/data 2>/dev/null || true
-    su agent -c "cd /app && claude --print \"\$(cat $PROMPT_FILE)\" --allowedTools 'mcp__*' --dangerously-skip-permissions"
+    su agent -c "cd /app && claude \"\$(cat $PROMPT_FILE)\" --allowedTools 'mcp__*' --dangerously-skip-permissions --verbose"
 else
-    claude --print "$(cat $PROMPT_FILE)" --allowedTools "mcp__*" --dangerously-skip-permissions
+    claude "$(cat $PROMPT_FILE)" --allowedTools "mcp__*" --dangerously-skip-permissions --verbose
 fi
 CLAUDE_EXIT=$?
 echo "Claude Code exited with code: $CLAUDE_EXIT"
