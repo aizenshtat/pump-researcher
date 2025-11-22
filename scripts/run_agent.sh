@@ -102,7 +102,11 @@ fi
 PROMPT=$(python3 src/agents/orchestrator.py $ORCH_ARGS)
 
 # Execute with Claude Code in headless mode
-# Same flags as CI/CD workflow
-claude --print "$PROMPT" --allowedTools "mcp__*" --dangerously-skip-permissions
+# If running as root, switch to agent user (required for --dangerously-skip-permissions)
+if [ "$(id -u)" = "0" ] && id agent &>/dev/null; then
+    su agent -c "claude --print \"$PROMPT\" --allowedTools 'mcp__*' --dangerously-skip-permissions"
+else
+    claude --print "$PROMPT" --allowedTools "mcp__*" --dangerously-skip-permissions
+fi
 
 echo "=== Agent Run Completed ==="

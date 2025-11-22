@@ -35,5 +35,9 @@ RUN PUMP_RESEARCHER_SETUP=1 ./scripts/setup-mcp-servers.sh
 # Initialize database directory
 RUN mkdir -p data
 
-# Default command
+# Create non-root user for Claude Code
+RUN useradd -m -s /bin/bash agent && \
+    chown -R agent:agent /app
+
+# Default command (switch to agent user for Claude Code)
 CMD ["./scripts/run_agent.sh", "--skip-setup"]

@@ -25,6 +25,7 @@ HTML_TEMPLATE = """
 <html>
 <head>
     <title>Pump Researcher</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * { box-sizing: border-box; }
         body {
@@ -175,6 +176,30 @@ HTML_TEMPLATE = """
             border-bottom: 1px solid #30363d;
         }
         th { color: #8b949e; font-weight: normal; }
+
+        /* Mobile responsive */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .header-row {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            .run-btn { margin-left: 0; width: 100%; }
+            .status-msg { margin-left: 0; }
+            .stats { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+            .stat-card { padding: 15px; }
+            .stat-value { font-size: 1.5em; }
+            .tabs { flex-wrap: wrap; }
+            .tab { flex: 1; text-align: center; min-width: 80px; }
+            .card { padding: 15px; }
+            .pump-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+            .symbol { font-size: 1.2em; }
+            table { font-size: 0.85em; }
+            th, td { padding: 8px 5px; }
+            .log-container { font-size: 0.75em; max-height: 300px; }
+            h1 { font-size: 1.5em; }
+        }
     </style>
 </head>
 <body>
