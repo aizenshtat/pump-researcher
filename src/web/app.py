@@ -454,15 +454,21 @@ HTML_TEMPLATE = """
         function createCollapsible(title, content) {
             const div = document.createElement('div');
             div.className = 'collapsible';
-            div.innerHTML = `
-                <div class="collapsible-header" onclick="this.parentElement.classList.toggle('expanded')">
-                    <span>${title}</span>
-                    <span class="collapsible-arrow">▶</span>
-                </div>
-                <div class="collapsible-content">
-                    <pre style="margin:0;white-space:pre-wrap;word-break:break-all;">${content.join('\n')}</pre>
-                </div>
-            `;
+
+            const header = document.createElement('div');
+            header.className = 'collapsible-header';
+            header.onclick = function() { this.parentElement.classList.toggle('expanded'); };
+            header.innerHTML = '<span>' + title + '</span><span class="collapsible-arrow">▶</span>';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'collapsible-content';
+            const pre = document.createElement('pre');
+            pre.style.cssText = 'margin:0;white-space:pre-wrap;word-break:break-all;';
+            pre.textContent = content.join('\\n');
+            contentDiv.appendChild(pre);
+
+            div.appendChild(header);
+            div.appendChild(contentDiv);
             return div;
         }
     </script>
