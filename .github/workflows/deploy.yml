@@ -72,6 +72,8 @@ jobs:
             docker compose build
             docker compose up -d web
             docker compose ps
+            # Cleanup old images and build cache
+            docker system prune -af --volumes
           "
 
       - name: Setup cron for hourly agent runs
