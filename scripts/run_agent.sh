@@ -98,15 +98,19 @@ if [ -n "$WINDOW" ]; then
     echo "Using time window: ${WINDOW} minutes"
 fi
 
-# Generate the prompt
-PROMPT=$(python3 src/agents/orchestrator.py $ORCH_ARGS)
+# Generate the prompt and save to temp file (avoids shell escaping issues)
+PROMPT_FILE=$(mktemp)
+python3 src/agents/orchestrator.py $ORCH_ARGS > "$PROMPT_FILE"
 
 # Execute with Claude Code in headless mode
 # If running as root, switch to agent user (required for --dangerously-skip-permissions)
 if [ "$(id -u)" = "0" ] && id agent &>/dev/null; then
-    su agent -c "claude --print \"$PROMPT\" --allowedTools 'mcp__*' --dangerously-skip-permissions"
+    chown agent:agent "$PROMPT_FILE"
+    su agent -c "claude --print \"\$(cat $PROMPT_FILE)\" --allowedTools 'mcp__*' --dangerously-skip-permissions"
 else
-    claude --print "$PROMPT" --allowedTools "mcp__*" --dangerously-skip-permissions
+    claude --print "$(cat $PROMPT_FILE)" --allowedTools "mcp__*" --dangerously-skip-permissions
 fi
+
+rm -f "$PROMPT_FILE"
 
 echo "=== Agent Run Completed ==="
