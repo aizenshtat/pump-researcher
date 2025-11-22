@@ -51,17 +51,8 @@ fi
 # Install Node.js-based MCP servers
 echo "Installing Node.js-based MCP servers..."
 
-# Twitter MCP (requires cloning and building)
-echo "  - twitter-mcp-server"
-if [ ! -d "$MCP_DIR/twitter-mcp-server" ]; then
-    git clone https://github.com/taazkareem/twitter-mcp-server.git "$MCP_DIR/twitter-mcp-server"
-    cd "$MCP_DIR/twitter-mcp-server"
-    npm install
-    npm run build
-    cd - > /dev/null
-else
-    echo "    twitter-mcp-server already exists, skipping clone"
-fi
+# Twitter MCP (via npx, no pre-install needed)
+echo "  - @mbelinky/x-mcp-server (will be installed on first run via npx)"
 
 # CoinMarketCap MCP (via npx, no pre-install needed)
 echo "  - @shinzolabs/coinmarketcap-mcp (will be installed on first run via npx)"

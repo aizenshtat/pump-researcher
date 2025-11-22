@@ -32,16 +32,16 @@
       }
     },
     "twitter": {
-      "command": "node",
+      "command": "npx",
       "args": [
-        ".mcp-servers/twitter-mcp-server/build/index.js"
+        "-y",
+        "@mbelinky/x-mcp-server"
       ],
       "env": {
-        "TWITTER_API_KEY": "${TWITTER_API_KEY}",
-        "TWITTER_API_SECRET_KEY": "${TWITTER_API_SECRET}",
-        "TWITTER_ACCESS_TOKEN": "${TWITTER_ACCESS_TOKEN}",
-        "TWITTER_ACCESS_TOKEN_SECRET": "${TWITTER_ACCESS_TOKEN_SECRET}",
-        "TWITTER_BEARER_TOKEN": "${TWITTER_BEARER_TOKEN}"
+        "API_KEY": "${TWITTER_API_KEY}",
+        "API_SECRET_KEY": "${TWITTER_API_SECRET}",
+        "ACCESS_TOKEN": "${TWITTER_ACCESS_TOKEN}",
+        "ACCESS_TOKEN_SECRET": "${TWITTER_ACCESS_TOKEN_SECRET}"
       }
     },
     "discord": {
