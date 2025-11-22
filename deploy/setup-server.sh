@@ -10,7 +10,14 @@ echo "=== Setting up server for $DOMAIN ==="
 # Install dependencies
 echo "Installing dependencies..."
 apt-get update
-apt-get install -y docker.io docker-compose nginx certbot python3-certbot-nginx
+
+# Install nginx and certbot
+apt-get install -y nginx certbot python3-certbot-nginx
+
+# Install Docker if not present (skip if already installed via containerd.io)
+if ! command -v docker &> /dev/null; then
+    apt-get install -y docker.io docker-compose
+fi
 
 # Enable and start Docker
 systemctl enable docker
