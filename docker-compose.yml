@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  pump-researcher:
+    build: .
+    container_name: pump-researcher
+    env_file:
+      - .env
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Reddit
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
+      # Telegram
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      - TELEGRAM_PHONE_NUMBER=${TELEGRAM_PHONE_NUMBER}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      # Twitter
+      - TWITTER_USERNAME=${TWITTER_USERNAME}
+      - TWITTER_PASSWORD=${TWITTER_PASSWORD}
+      - TWITTER_EMAIL=${TWITTER_EMAIL}
+      # Discord
+      - DISCORD_EMAIL=${DISCORD_EMAIL}
+      - DISCORD_PASSWORD=${DISCORD_PASSWORD}
+      - DISCORD_HEADLESS=true
+      # CoinMarketCap
+      - COINMARKETCAP_API_KEY=${COINMARKETCAP_API_KEY}
+      - COINMARKETCAP_SUBSCRIPTION_LEVEL=${COINMARKETCAP_SUBSCRIPTION_LEVEL:-Basic}
+      # Binance
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - BINANCE_TESTNET=${BINANCE_TESTNET:-false}
+      # Grok/xAI
+      - XAI_API_KEY=${XAI_API_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./.claude:/app/.claude
+    restart: "no"
+
+  # Scheduled runner using ofelia
+  scheduler:
+    image: mcuadros/ofelia:latest
+    container_name: pump-scheduler
+    depends_on:
+      - pump-researcher
+    command: daemon --docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      ofelia.job-run.pump-research.schedule: "0 0 * * * *"
+      ofelia.job-run.pump-research.container: "pump-researcher"
+
+  # Alternative: simple cron-based scheduler
+  cron-scheduler:
+    build: .
+    container_name: pump-cron
+    env_file:
+      - .env
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      - TELEGRAM_PHONE_NUMBER=${TELEGRAM_PHONE_NUMBER}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - TWITTER_USERNAME=${TWITTER_USERNAME}
+      - TWITTER_PASSWORD=${TWITTER_PASSWORD}
+      - TWITTER_EMAIL=${TWITTER_EMAIL}
+      - DISCORD_EMAIL=${DISCORD_EMAIL}
+      - DISCORD_PASSWORD=${DISCORD_PASSWORD}
+      - DISCORD_HEADLESS=true
+      - COINMARKETCAP_API_KEY=${COINMARKETCAP_API_KEY}
+      - COINMARKETCAP_SUBSCRIPTION_LEVEL=${COINMARKETCAP_SUBSCRIPTION_LEVEL:-Basic}
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - BINANCE_TESTNET=${BINANCE_TESTNET:-false}
+      - XAI_API_KEY=${XAI_API_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./.claude:/app/.claude
+    entrypoint: /bin/sh
+    command: -c "echo '0 * * * * /app/scripts/run_agent.sh --skip-setup >> /var/log/cron.log 2>&1' | crontab - && crond -f"
+    restart: unless-stopped
+    profiles:
+      - cron
+
+volumes:
+  data:
