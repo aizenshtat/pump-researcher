@@ -13,22 +13,34 @@ This project uses multiple MCP (Model Context Protocol) servers to integrate wit
 
 2. **Fill in your API credentials** in `.env`
 
-3. **Run setup script:**
+3. **Run the agent:**
    ```bash
-   ./scripts/setup-mcp-servers.sh
+   ./scripts/run_agent.sh
    ```
+   This automatically installs dependencies, sets up MCP servers, and runs the agent.
 
-4. **Restart Claude Code** to load the MCP servers
+### Docker
 
-### CI/CD Setup
+```bash
+# One-off run
+docker compose run --rm pump-researcher
+
+# Scheduled (hourly)
+docker compose up -d scheduler
+```
+
+### CI/CD Setup (GitHub Actions)
 
 1. **Add secrets to GitHub repository:**
    - Go to Settings > Secrets and variables > Actions
    - Add all environment variables from `.env.example` as secrets
+   - Required: `ANTHROPIC_API_KEY`, `TELEGRAM_CHAT_ID`, plus all MCP credentials
 
 2. **Trigger the workflow:**
-   - Push changes to `scripts/setup-mcp-servers.sh` or `.claude/settings.local.json`
-   - Or manually trigger via Actions > Setup MCP Servers > Run workflow
+   - Runs automatically every hour
+   - Or manually trigger via Actions > Pump Research Agent > Run workflow
+
+The CI/CD workflow builds and runs the same Docker image used locally.
 
 ## MCP Servers
 
