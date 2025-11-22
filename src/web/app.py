@@ -148,6 +148,26 @@ HTML_TEMPLATE = """
             font-size: 0.85em;
         }
         .view-logs-btn:hover { background: #30363d; }
+        .pump-nav {
+            margin-left: 15px;
+            font-size: 0.9em;
+        }
+        .nav-btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #58a6ff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        .nav-btn:hover { background: #30363d; }
+        .pump-index { margin: 0 8px; }
+        .pump-meta {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
         .header-row {
             display: flex;
             align-items: center;
@@ -276,44 +296,58 @@ HTML_TEMPLATE = """
         </div>
 
         {% if tab == 'pumps' %}
-            {% if pumps %}
-                {% for pump in pumps %}
-                <div class="card">
+            {% if pump_groups %}
+                {% for group in pump_groups %}
+                <div class="card pump-group" data-symbol="{{ group.symbol }}">
                     <div class="pump-header">
                         <div>
-                            <span class="symbol">{{ pump.symbol }}</span>
-                            <span class="timestamp">{{ pump.detected_at }}</span>
-                        </div>
-                        <span class="change positive">+{{ "%.1f"|format(pump.price_change_pct) }}%</span>
-                    </div>
-
-                    {% if pump.trigger %}
-                    <div class="trigger">
-                        <div class="trigger-type">{{ pump.trigger.trigger_type | replace('_', ' ') }}</div>
-                        <div>{{ pump.trigger.description }}</div>
-                        <span class="confidence {{ 'high' if pump.trigger.confidence > 0.7 else 'medium' if pump.trigger.confidence > 0.4 else 'low' }}">
-                            {{ "%.0f"|format(pump.trigger.confidence * 100) }}% confidence
-                        </span>
-                    </div>
-                    {% endif %}
-
-                    {% if pump.findings %}
-                    <div class="findings">
-                        <strong>Findings ({{ pump.findings|length }})</strong>
-                        {% for finding in pump.findings[:5] %}
-                        <div class="finding">
-                            <div class="finding-source">{{ finding.source_type }}</div>
-                            <div>{{ finding.content[:200] }}{% if finding.content|length > 200 %}...{% endif %}</div>
-                            {% if finding.source_url %}
-                            <a href="{{ finding.source_url }}" target="_blank">View source</a>
+                            <span class="symbol">{{ group.symbol }}</span>
+                            {% if group.count > 1 %}
+                            <span class="pump-nav">
+                                <button class="nav-btn" onclick="prevPump('{{ group.symbol }}')">&lt;</button>
+                                <span class="pump-index" id="idx-{{ group.symbol }}">1</span> / {{ group.count }}
+                                <button class="nav-btn" onclick="nextPump('{{ group.symbol }}')">&gt;</button>
+                            </span>
                             {% endif %}
                         </div>
-                        {% endfor %}
-                        {% if pump.findings|length > 5 %}
-                        <div class="timestamp">... and {{ pump.findings|length - 5 }} more</div>
+                    </div>
+
+                    {% for pump in group.pumps %}
+                    <div class="pump-instance" id="pump-{{ group.symbol }}-{{ loop.index0 }}" {% if not loop.first %}style="display:none"{% endif %}>
+                        <div class="pump-meta">
+                            <span class="timestamp">{{ pump.detected_at }}</span>
+                            <span class="change positive">+{{ "%.1f"|format(pump.price_change_pct) }}%</span>
+                        </div>
+
+                        {% if pump.trigger %}
+                        <div class="trigger">
+                            <div class="trigger-type">{{ pump.trigger.trigger_type | replace('_', ' ') }}</div>
+                            <div>{{ pump.trigger.description }}</div>
+                            <span class="confidence {{ 'high' if pump.trigger.confidence > 0.7 else 'medium' if pump.trigger.confidence > 0.4 else 'low' }}">
+                                {{ "%.0f"|format(pump.trigger.confidence * 100) }}% confidence
+                            </span>
+                        </div>
+                        {% endif %}
+
+                        {% if pump.findings %}
+                        <div class="findings">
+                            <strong>Findings ({{ pump.findings|length }})</strong>
+                            {% for finding in pump.findings[:5] %}
+                            <div class="finding">
+                                <div class="finding-source">{{ finding.source_type }}</div>
+                                <div>{{ finding.content[:200] }}{% if finding.content|length > 200 %}...{% endif %}</div>
+                                {% if finding.source_url %}
+                                <a href="{{ finding.source_url }}" target="_blank">View source</a>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                            {% if pump.findings|length > 5 %}
+                            <div class="timestamp">... and {{ pump.findings|length - 5 }} more</div>
+                            {% endif %}
+                        </div>
                         {% endif %}
                     </div>
-                    {% endif %}
+                    {% endfor %}
                 </div>
                 {% endfor %}
             {% else %}
@@ -360,6 +394,46 @@ HTML_TEMPLATE = """
     <script>
         let logInterval = null;
         let lastLogIndex = 0;
+
+        // Track current pump index for each symbol
+        const pumpIndices = {};
+
+        function getPumpCount(symbol) {
+            const card = document.querySelector('[data-symbol="' + symbol + '"]');
+            if (!card) return 0;
+            return card.querySelectorAll('.pump-instance').length;
+        }
+
+        function showPump(symbol, index) {
+            const count = getPumpCount(symbol);
+            if (count === 0) return;
+
+            // Wrap around
+            if (index < 0) index = count - 1;
+            if (index >= count) index = 0;
+
+            pumpIndices[symbol] = index;
+
+            // Hide all, show selected
+            for (let i = 0; i < count; i++) {
+                const el = document.getElementById('pump-' + symbol + '-' + i);
+                if (el) el.style.display = i === index ? 'block' : 'none';
+            }
+
+            // Update counter
+            const idxEl = document.getElementById('idx-' + symbol);
+            if (idxEl) idxEl.textContent = index + 1;
+        }
+
+        function prevPump(symbol) {
+            const current = pumpIndices[symbol] || 0;
+            showPump(symbol, current - 1);
+        }
+
+        function nextPump(symbol) {
+            const current = pumpIndices[symbol] || 0;
+            showPump(symbol, current + 1);
+        }
 
         async function runAgent() {
             const btn = document.getElementById('runBtn');
@@ -569,13 +643,13 @@ def get_stats():
 
 @app.route("/")
 def index():
-    """Show pumps with their findings and triggers."""
+    """Show pumps grouped by symbol with their findings and triggers."""
     conn = get_db()
-    pumps = []
+    grouped_pumps = {}
 
     if conn:
         rows = conn.execute("""
-            SELECT * FROM pumps ORDER BY detected_at DESC LIMIT 50
+            SELECT * FROM pumps ORDER BY detected_at DESC LIMIT 100
         """).fetchall()
 
         for row in rows:
@@ -593,12 +667,29 @@ def index():
             """, (pump["id"],)).fetchall()
             pump["findings"] = [dict(f) for f in findings]
 
-            pumps.append(pump)
+            # Group by symbol
+            symbol = pump["symbol"]
+            if symbol not in grouped_pumps:
+                grouped_pumps[symbol] = []
+            grouped_pumps[symbol].append(pump)
 
         conn.close()
 
+    # Convert to list of groups, sorted by most recent pump
+    pump_groups = []
+    for symbol, pumps in grouped_pumps.items():
+        pump_groups.append({
+            "symbol": symbol,
+            "pumps": pumps,
+            "count": len(pumps),
+            "latest": pumps[0]  # Already sorted by detected_at DESC
+        })
+
+    # Sort by latest detection
+    pump_groups.sort(key=lambda x: x["latest"]["detected_at"], reverse=True)
+
     return render_template_string(HTML_TEMPLATE,
-                                  pumps=pumps,
+                                  pump_groups=pump_groups,
                                   stats=get_stats(),
                                   tab="pumps")
 
