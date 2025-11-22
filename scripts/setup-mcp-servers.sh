@@ -14,8 +14,9 @@ echo "Installing system dependencies..."
 if ! command -v uv &> /dev/null; then
     echo "Installing uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.cargo/bin:$PATH"
 fi
+# Add uv to PATH (it installs to ~/.local/bin)
+export PATH="$HOME/.local/bin:$PATH"
 
 # Check for Node.js/npm
 if ! command -v node &> /dev/null; then
