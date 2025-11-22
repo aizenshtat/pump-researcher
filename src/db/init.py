@@ -14,7 +14,23 @@ def init_db():
         with open(schema_path) as f:
             conn.executescript(f.read())
 
+        # Run migrations for existing databases
+        run_migrations(conn)
+
     print(f"Database initialized at {DB_PATH}")
+
+def run_migrations(conn):
+    """Run database migrations for schema updates."""
+    cursor = conn.cursor()
+
+    # Check if logs column exists in agent_runs
+    cursor.execute("PRAGMA table_info(agent_runs)")
+    columns = [col[1] for col in cursor.fetchall()]
+
+    if 'logs' not in columns:
+        print("Migration: Adding logs column to agent_runs")
+        cursor.execute("ALTER TABLE agent_runs ADD COLUMN logs TEXT")
+        conn.commit()
 
 def get_connection():
     """Get a database connection."""
