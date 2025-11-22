@@ -15,11 +15,9 @@ from flask import Flask, render_template_string, jsonify, request, Response
 app = Flask(__name__)
 
 # Track if agent is currently running
-agent_running = False
-agent_started_at = None
+agent_process = None
 agent_lock = threading.Lock()
 agent_logs = deque(maxlen=500)  # Keep last 500 lines
-AGENT_TIMEOUT = 600  # 10 minutes max
 DB_PATH = Path(__file__).parent.parent.parent / "data" / "research.db"
 
 HTML_TEMPLATE = """
@@ -490,61 +488,49 @@ def runs():
 @app.route("/api/run", methods=["POST"])
 def run_agent():
     """Trigger agent run."""
-    global agent_running, agent_logs, agent_started_at
-    import time
+    global agent_process, agent_logs
 
     with agent_lock:
-        # Check if agent is stuck (running for more than timeout)
-        if agent_running and agent_started_at:
-            elapsed = time.time() - agent_started_at
-            if elapsed > AGENT_TIMEOUT:
-                agent_logs.append(f"⚠ Previous run timed out after {int(elapsed)}s, resetting...")
-                agent_running = False
-
-        if agent_running:
+        # Check if process is actually running
+        if agent_process is not None and agent_process.poll() is None:
             return jsonify({"running": True, "message": "Agent is already running"})
-        agent_running = True
-        agent_started_at = time.time()
+
         agent_logs.clear()
+        agent_logs.append("Starting pump research agent...")
 
-    def run_in_background():
-        global agent_running
+        # Start the agent process
+        agent_process = subprocess.Popen(
+            ["./scripts/run_agent.sh", "--skip-setup"],
+            cwd=Path(__file__).parent.parent.parent,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+
+    def stream_output():
+        global agent_process
         try:
-            agent_logs.append("Starting pump research agent...")
-
-            # Run the agent script and capture output
-            process = subprocess.Popen(
-                ["./scripts/run_agent.sh", "--skip-setup"],
-                cwd=Path(__file__).parent.parent.parent,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1
-            )
-
             # Stream output to logs
-            for line in iter(process.stdout.readline, ''):
+            for line in iter(agent_process.stdout.readline, ''):
                 if line:
                     agent_logs.append(line.rstrip())
 
-            process.wait(timeout=600)
+            agent_process.wait(timeout=600)
 
-            if process.returncode == 0:
+            if agent_process.returncode == 0:
                 agent_logs.append("✓ Agent completed successfully")
             else:
-                agent_logs.append(f"✗ Agent exited with code {process.returncode}")
+                agent_logs.append(f"✗ Agent exited with code {agent_process.returncode}")
 
         except subprocess.TimeoutExpired:
             agent_logs.append("✗ Agent timed out after 10 minutes")
-            process.kill()
+            agent_process.kill()
         except Exception as e:
             agent_logs.append(f"✗ Error: {str(e)}")
-        finally:
-            with agent_lock:
-                agent_running = False
 
-    # Start agent in background thread
-    thread = threading.Thread(target=run_in_background)
+    # Start streaming in background thread
+    thread = threading.Thread(target=stream_output)
     thread.start()
     thread.join(timeout=600)  # Wait for completion
 
@@ -561,7 +547,8 @@ def get_logs():
 @app.route("/api/status")
 def agent_status():
     """Check if agent is running."""
-    return jsonify({"running": agent_running})
+    running = agent_process is not None and agent_process.poll() is None
+    return jsonify({"running": running})
 
 if __name__ == "__main__":
     print(f"Database path: {DB_PATH}")
