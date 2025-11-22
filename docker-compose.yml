@@ -99,7 +99,8 @@ services:
       - ./data:/app/data
     environment:
       - FLASK_ENV=production
-    command: python src/web/app.py
+    entrypoint: ["python3"]
+    command: ["src/web/app.py"]
     restart: unless-stopped
 
 volumes:
