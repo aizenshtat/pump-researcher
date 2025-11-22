@@ -1,0 +1,94 @@
+name: Pump Research Agent
+
+on:
+  schedule:
+    # Run every hour
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: 'Enable debug mode'
+        required: false
+        default: 'false'
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Cache MCP servers
+        uses: actions/cache@v4
+        with:
+          path: |
+            .mcp-servers
+            ~/.cache/uv
+            ~/.npm
+          key: mcp-servers-${{ runner.os }}-${{ hashFiles('scripts/setup-mcp-servers.sh') }}
+
+      - name: Run Pump Research Agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Reddit
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          # Telegram
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_PHONE_NUMBER: ${{ secrets.TELEGRAM_PHONE_NUMBER }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Twitter
+          TWITTER_USERNAME: ${{ secrets.TWITTER_USERNAME }}
+          TWITTER_PASSWORD: ${{ secrets.TWITTER_PASSWORD }}
+          TWITTER_EMAIL: ${{ secrets.TWITTER_EMAIL }}
+          # Discord
+          DISCORD_EMAIL: ${{ secrets.DISCORD_EMAIL }}
+          DISCORD_PASSWORD: ${{ secrets.DISCORD_PASSWORD }}
+          # CoinMarketCap
+          COINMARKETCAP_API_KEY: ${{ secrets.COINMARKETCAP_API_KEY }}
+          COINMARKETCAP_SUBSCRIPTION_LEVEL: ${{ secrets.COINMARKETCAP_SUBSCRIPTION_LEVEL }}
+          # Binance
+          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
+          BINANCE_TESTNET: 'false'
+          # Grok/xAI
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+        run: ./scripts/run_agent.sh
+
+      - name: Upload database artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: research-db-${{ github.run_number }}
+          path: data/research.db
+          retention-days: 30
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Pump Research Agent Run" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run Number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          if [ -f data/research.db ]; then
+            echo "- **Database:** Saved as artifact" >> $GITHUB_STEP_SUMMARY
+          fi

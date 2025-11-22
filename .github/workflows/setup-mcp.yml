@@ -1,0 +1,58 @@
+name: Setup MCP Servers
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/setup-mcp-servers.sh'
+      - '.claude/settings.local.json'
+
+jobs:
+  setup-mcp:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Run MCP setup script
+        run: ./scripts/setup-mcp-servers.sh
+        env:
+          # These would come from GitHub Secrets in real usage
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_PHONE_NUMBER: ${{ secrets.TELEGRAM_PHONE_NUMBER }}
+          TWITTER_USERNAME: ${{ secrets.TWITTER_USERNAME }}
+          TWITTER_PASSWORD: ${{ secrets.TWITTER_PASSWORD }}
+          TWITTER_EMAIL: ${{ secrets.TWITTER_EMAIL }}
+          DISCORD_EMAIL: ${{ secrets.DISCORD_EMAIL }}
+          DISCORD_PASSWORD: ${{ secrets.DISCORD_PASSWORD }}
+          COINMARKETCAP_API_KEY: ${{ secrets.COINMARKETCAP_API_KEY }}
+          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+
+      - name: Cache MCP servers
+        uses: actions/cache@v4
+        with:
+          path: |
+            .mcp-servers
+            ~/.cache/uv
+            ~/.npm
+          key: mcp-servers-${{ runner.os }}-${{ hashFiles('scripts/setup-mcp-servers.sh') }}
