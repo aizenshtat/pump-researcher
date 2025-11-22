@@ -1,0 +1,93 @@
+name: Deploy to Server
+
+on:
+  workflow_run:
+    workflows: ["Pump Research Agent"]
+    types:
+      - completed
+  workflow_dispatch:
+
+env:
+  SERVER_IP: 91.99.4.56
+  SERVER_USER: root
+  DOMAIN: pump-researcher.aizenshtat.eu
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ env.SERVER_IP }} >> ~/.ssh/known_hosts
+
+      - name: Create deployment directory
+        run: |
+          ssh ${{ env.SERVER_USER }}@${{ env.SERVER_IP }} "mkdir -p /opt/pump-researcher"
+
+      - name: Copy files to server
+        run: |
+          scp -r docker-compose.yml Dockerfile src scripts deploy \
+            ${{ env.SERVER_USER }}@${{ env.SERVER_IP }}:/opt/pump-researcher/
+
+      - name: Create .env file on server
+        run: |
+          ssh ${{ env.SERVER_USER }}@${{ env.SERVER_IP }} "cat > /opt/pump-researcher/.env << 'EOF'
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          REDDIT_CLIENT_ID=${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET=${{ secrets.REDDIT_CLIENT_SECRET }}
+          TELEGRAM_API_ID=${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH=${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_PHONE_NUMBER=${{ secrets.TELEGRAM_PHONE_NUMBER }}
+          TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
+          TWITTER_USERNAME=${{ secrets.TWITTER_USERNAME }}
+          TWITTER_PASSWORD=${{ secrets.TWITTER_PASSWORD }}
+          TWITTER_EMAIL=${{ secrets.TWITTER_EMAIL }}
+          DISCORD_EMAIL=${{ secrets.DISCORD_EMAIL }}
+          DISCORD_PASSWORD=${{ secrets.DISCORD_PASSWORD }}
+          COINMARKETCAP_API_KEY=${{ secrets.COINMARKETCAP_API_KEY }}
+          COINMARKETCAP_SUBSCRIPTION_LEVEL=${{ secrets.COINMARKETCAP_SUBSCRIPTION_LEVEL }}
+          BINANCE_API_KEY=${{ secrets.BINANCE_API_KEY }}
+          BINANCE_API_SECRET=${{ secrets.BINANCE_API_SECRET }}
+          BINANCE_TESTNET=false
+          XAI_API_KEY=${{ secrets.XAI_API_KEY }}
+          PUMP_THRESHOLD_PCT=${{ vars.PUMP_THRESHOLD_PCT || '5.0' }}
+          PUMP_TIME_WINDOW_MINUTES=${{ vars.PUMP_TIME_WINDOW_MINUTES || '60' }}
+          EOF"
+
+      - name: Initial server setup (if needed)
+        run: |
+          ssh ${{ env.SERVER_USER }}@${{ env.SERVER_IP }} "
+            if ! command -v docker &> /dev/null; then
+              echo 'Running initial server setup...'
+              chmod +x /opt/pump-researcher/deploy/setup-server.sh
+              CERTBOT_EMAIL=${{ secrets.CERTBOT_EMAIL }} /opt/pump-researcher/deploy/setup-server.sh
+            fi
+          "
+
+      - name: Build and deploy containers
+        run: |
+          ssh ${{ env.SERVER_USER }}@${{ env.SERVER_IP }} "
+            cd /opt/pump-researcher
+            docker compose build
+            docker compose up -d web
+            docker compose ps
+          "
+
+      - name: Setup cron for hourly agent runs
+        run: |
+          ssh ${{ env.SERVER_USER }}@${{ env.SERVER_IP }} "
+            echo '0 * * * * cd /opt/pump-researcher && docker compose run --rm pump-researcher >> /var/log/pump-researcher.log 2>&1' | crontab -
+          "
+
+      - name: Verify deployment
+        run: |
+          sleep 5
+          curl -sSf https://${{ env.DOMAIN }} > /dev/null && echo "✓ Deployment successful: https://${{ env.DOMAIN }}"
