@@ -26,44 +26,78 @@ from agents.reporter import (
 ORCHESTRATOR_PROMPT = """
 You are the Pump Research Agent orchestrator. Execute the following workflow:
 
-## Phase 1: Initialize
-- Ensure database is initialized at {db_path}
-
-## Phase 2: Detect Pumps
+## Phase 1: Detect Pumps
 {detection_prompt}
 
-## Phase 3: Investigate Each Pump
+## Phase 2: Investigate Each Pump
 For each detected pump, investigate using all available sources:
-- Reddit MCP
-- Twitter MCP
-- Discord MCP
-- Telegram MCP
-- Web Search
-- Grok MCP
+- Reddit MCP: Search for posts about the token
+- Twitter MCP: Search for tweets and announcements
+- Discord MCP: Check crypto servers for mentions
+- Web Search: Look for news articles and announcements
+- Grok MCP: Get AI analysis of the pump
 
-## Phase 4: Report Findings
-For each investigated pump:
-1. Save pump data to SQLite database
-2. Save all findings to database
-3. Save identified trigger to database
-4. Send summary to Telegram
+## Phase 3: Save to Database
+For each pump and its findings, execute Python code to save to SQLite at {db_path}:
 
-## Execution Instructions
+```python
+import sqlite3
+conn = sqlite3.connect('{db_path}')
 
-Execute each phase sequentially. After completing all phases, return a final summary:
+# Save pump
+cursor = conn.execute('''
+    INSERT INTO pumps (symbol, price_change_pct, time_window_minutes, price_at_detection, volume_change_pct, market_cap, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+''', (symbol, price_change_pct, time_window_minutes, price_at_detection, volume_change_pct, market_cap, source))
+pump_id = cursor.lastrowid
 
-```json
-{{
-  "run_id": <run_id>,
-  "pumps_detected": <count>,
-  "pumps_investigated": <count>,
-  "total_findings": <count>,
-  "notifications_sent": <count>,
-  "errors": []
-}}
+# Save findings
+for finding in findings:
+    conn.execute('''
+        INSERT INTO findings (pump_id, source_type, source_url, content, relevance_score, sentiment)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (pump_id, finding['source_type'], finding.get('source_url'), finding['content'], finding.get('relevance_score'), finding.get('sentiment')))
+
+# Save trigger
+conn.execute('''
+    INSERT INTO news_triggers (pump_id, trigger_type, description, confidence)
+    VALUES (?, ?, ?, ?)
+''', (pump_id, trigger_type, description, confidence))
+
+conn.commit()
+conn.close()
 ```
 
-Begin execution now.
+## Phase 4: Send Telegram Alert
+For each pump, use the Telegram MCP to send a message with this format:
+
+🚀 **PUMP DETECTED: ${{symbol}}**
+
+📈 Price: +{{price_change_pct}}% ({{time_window}} min)
+💰 Current: ${{price}}
+
+🔍 **Trigger:** {{trigger_type}}
+{{description}}
+
+**Key Findings:**
+- {{finding_1}}
+- {{finding_2}}
+- {{finding_3}}
+
+Send to the chat configured in TELEGRAM_CHAT_ID.
+
+## Execution
+
+Execute all phases. If no pumps detected, skip phases 2-4.
+
+Return summary:
+```json
+{{
+  "pumps_detected": <count>,
+  "findings_count": <count>,
+  "notifications_sent": <count>
+}}
+```
 """
 
 def generate_full_prompt(threshold_pct: float = None, time_window_minutes: int = None) -> str:
