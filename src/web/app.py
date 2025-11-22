@@ -359,6 +359,8 @@ HTML_TEMPLATE = """
             logContainer.innerHTML = '';
             logContainer.classList.add('visible');
             lastLogIndex = 0;
+            inCollapsible = false;
+            collapsibleContent = [];
 
             // Start polling for logs
             logInterval = setInterval(fetchLogs, 1000);
@@ -464,7 +466,7 @@ HTML_TEMPLATE = """
             contentDiv.className = 'collapsible-content';
             const pre = document.createElement('pre');
             pre.style.cssText = 'margin:0;white-space:pre-wrap;word-break:break-all;';
-            pre.textContent = content.join('\\n');
+            pre.textContent = content.join('\n');
             contentDiv.appendChild(pre);
 
             div.appendChild(header);
@@ -609,12 +611,11 @@ def run_agent():
         except Exception as e:
             agent_logs.append(f"✗ Error: {str(e)}")
 
-    # Start streaming in background thread
-    thread = threading.Thread(target=stream_output)
+    # Start streaming in background thread (don't wait - let it run async)
+    thread = threading.Thread(target=stream_output, daemon=True)
     thread.start()
-    thread.join(timeout=600)  # Wait for completion
 
-    return jsonify({"success": True})
+    return jsonify({"success": True, "message": "Agent started"})
 
 @app.route("/api/logs")
 def get_logs():
