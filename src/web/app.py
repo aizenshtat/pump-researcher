@@ -575,6 +575,19 @@ def run_agent():
         agent_logs.clear()
         agent_logs.append("Starting pump research agent...")
 
+        # Create agent run record
+        run_id = None
+        try:
+            conn = get_db()
+            if conn:
+                cursor = conn.execute("INSERT INTO agent_runs (status) VALUES ('running')")
+                run_id = cursor.lastrowid
+                conn.commit()
+                conn.close()
+                agent_logs.append(f"Agent run #{run_id} started")
+        except Exception as e:
+            agent_logs.append(f"Warning: Could not create run record: {e}")
+
         try:
             # Start the agent process
             agent_process = subprocess.Popen(
@@ -590,16 +603,37 @@ def run_agent():
             agent_logs.append(f"✗ Failed to start process: {str(e)}")
             return jsonify({"success": False, "error": str(e)})
 
-    def stream_output():
+    def stream_output(run_id):
         global agent_process
+        pumps_detected = 0
+        findings_count = 0
+
         try:
             # Stream output to logs
             for line in iter(agent_process.stdout.readline, ''):
                 if line:
                     agent_logs.append(line.rstrip())
+                    # Try to extract stats from output
+                    if '"pumps_detected":' in line:
+                        try:
+                            import re
+                            match = re.search(r'"pumps_detected":\s*(\d+)', line)
+                            if match:
+                                pumps_detected = int(match.group(1))
+                        except:
+                            pass
+                    if '"findings_count":' in line:
+                        try:
+                            import re
+                            match = re.search(r'"findings_count":\s*(\d+)', line)
+                            if match:
+                                findings_count = int(match.group(1))
+                        except:
+                            pass
 
             agent_process.wait(timeout=600)
 
+            status = "completed" if agent_process.returncode == 0 else "failed"
             if agent_process.returncode == 0:
                 agent_logs.append("✓ Agent completed successfully")
             else:
@@ -608,11 +642,29 @@ def run_agent():
         except subprocess.TimeoutExpired:
             agent_logs.append("✗ Agent timed out after 10 minutes")
             agent_process.kill()
+            status = "timeout"
         except Exception as e:
             agent_logs.append(f"✗ Error: {str(e)}")
+            status = "failed"
+
+        # Update agent run record
+        if run_id:
+            try:
+                conn = get_db()
+                if conn:
+                    conn.execute("""
+                        UPDATE agent_runs
+                        SET status = ?, completed_at = datetime('now'),
+                            pumps_detected = ?, findings_count = ?
+                        WHERE id = ?
+                    """, (status, pumps_detected, findings_count, run_id))
+                    conn.commit()
+                    conn.close()
+            except Exception as e:
+                agent_logs.append(f"Warning: Could not update run record: {e}")
 
     # Start streaming in background thread (don't wait - let it run async)
-    thread = threading.Thread(target=stream_output, daemon=True)
+    thread = threading.Thread(target=stream_output, args=(run_id,), daemon=True)
     thread.start()
 
     return jsonify({"success": True, "message": "Agent started"})
