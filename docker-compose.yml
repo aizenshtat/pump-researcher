@@ -86,5 +86,20 @@ services:
     profiles:
       - cron
 
+  # Web interface for viewing results
+  web:
+    build: .
+    container_name: pump-web
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - FLASK_ENV=production
+    command: python src/web/app.py
+    restart: unless-stopped
+    profiles:
+      - web
+
 volumes:
   data:

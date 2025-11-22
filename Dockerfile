@@ -26,6 +26,9 @@ COPY . .
 # Make scripts executable
 RUN chmod +x scripts/*.sh
 
+# Install Flask for web interface
+RUN pip3 install flask --break-system-packages
+
 # Setup MCP servers
 RUN PUMP_RESEARCHER_SETUP=1 ./scripts/setup-mcp-servers.sh
 

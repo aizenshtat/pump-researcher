@@ -1,0 +1,329 @@
+"""
+Simple Flask web interface for viewing pump research results.
+"""
+
+import json
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+
+from flask import Flask, render_template_string
+
+app = Flask(__name__)
+DB_PATH = Path(__file__).parent.parent.parent / "data" / "research.db"
+
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pump Researcher</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #0d1117;
+            color: #c9d1d9;
+        }
+        h1, h2, h3 { color: #58a6ff; margin-top: 0; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: #161b22;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+        }
+        .stat-value { font-size: 2em; font-weight: bold; color: #58a6ff; }
+        .stat-label { color: #8b949e; font-size: 0.9em; }
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .pump-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .symbol {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #f0f6fc;
+        }
+        .change {
+            font-size: 1.2em;
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+        .change.positive { background: #238636; color: #fff; }
+        .trigger {
+            background: #21262d;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+        .trigger-type {
+            text-transform: uppercase;
+            font-size: 0.8em;
+            color: #8b949e;
+            margin-bottom: 5px;
+        }
+        .confidence {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            background: #30363d;
+        }
+        .confidence.high { background: #238636; }
+        .confidence.medium { background: #9e6a03; }
+        .confidence.low { background: #da3633; }
+        .findings { margin-top: 15px; }
+        .finding {
+            padding: 10px;
+            border-left: 3px solid #30363d;
+            margin: 10px 0;
+            background: #0d1117;
+        }
+        .finding-source {
+            font-size: 0.8em;
+            color: #8b949e;
+            text-transform: uppercase;
+        }
+        .timestamp { color: #8b949e; font-size: 0.85em; }
+        .empty { text-align: center; padding: 40px; color: #8b949e; }
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: #21262d;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 1px solid #30363d;
+        }
+        .tab.active { background: #58a6ff; color: #0d1117; border-color: #58a6ff; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #30363d;
+        }
+        th { color: #8b949e; font-weight: normal; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Pump Researcher</h1>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value">{{ stats.total_pumps }}</div>
+                <div class="stat-label">Pumps Detected</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ stats.total_findings }}</div>
+                <div class="stat-label">Findings</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ stats.total_triggers }}</div>
+                <div class="stat-label">Triggers Identified</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ stats.total_runs }}</div>
+                <div class="stat-label">Agent Runs</div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <a href="/" class="tab {{ 'active' if tab == 'pumps' else '' }}">Pumps</a>
+            <a href="/runs" class="tab {{ 'active' if tab == 'runs' else '' }}">Agent Runs</a>
+        </div>
+
+        {% if tab == 'pumps' %}
+            {% if pumps %}
+                {% for pump in pumps %}
+                <div class="card">
+                    <div class="pump-header">
+                        <div>
+                            <span class="symbol">{{ pump.symbol }}</span>
+                            <span class="timestamp">{{ pump.detected_at }}</span>
+                        </div>
+                        <span class="change positive">+{{ "%.1f"|format(pump.price_change_pct) }}%</span>
+                    </div>
+
+                    {% if pump.trigger %}
+                    <div class="trigger">
+                        <div class="trigger-type">{{ pump.trigger.trigger_type | replace('_', ' ') }}</div>
+                        <div>{{ pump.trigger.description }}</div>
+                        <span class="confidence {{ 'high' if pump.trigger.confidence > 0.7 else 'medium' if pump.trigger.confidence > 0.4 else 'low' }}">
+                            {{ "%.0f"|format(pump.trigger.confidence * 100) }}% confidence
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    {% if pump.findings %}
+                    <div class="findings">
+                        <strong>Findings ({{ pump.findings|length }})</strong>
+                        {% for finding in pump.findings[:5] %}
+                        <div class="finding">
+                            <div class="finding-source">{{ finding.source_type }}</div>
+                            <div>{{ finding.content[:200] }}{% if finding.content|length > 200 %}...{% endif %}</div>
+                            {% if finding.source_url %}
+                            <a href="{{ finding.source_url }}" target="_blank">View source</a>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                        {% if pump.findings|length > 5 %}
+                        <div class="timestamp">... and {{ pump.findings|length - 5 }} more</div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="card empty">
+                    <h3>No pumps detected yet</h3>
+                    <p>Run the agent to start detecting pumps</p>
+                </div>
+            {% endif %}
+        {% elif tab == 'runs' %}
+            <div class="card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Started</th>
+                            <th>Status</th>
+                            <th>Pumps</th>
+                            <th>Findings</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for run in runs %}
+                        <tr>
+                            <td>{{ run.started_at }}</td>
+                            <td>{{ run.status }}</td>
+                            <td>{{ run.pumps_detected }}</td>
+                            <td>{{ run.findings_count }}</td>
+                            <td>{{ run.duration or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                        {% if not runs %}
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: #8b949e;">No runs yet</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>
+"""
+
+def get_db():
+    """Get database connection."""
+    if not DB_PATH.exists():
+        return None
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def get_stats():
+    """Get dashboard statistics."""
+    conn = get_db()
+    if not conn:
+        return {"total_pumps": 0, "total_findings": 0, "total_triggers": 0, "total_runs": 0}
+
+    stats = {}
+    stats["total_pumps"] = conn.execute("SELECT COUNT(*) FROM pumps").fetchone()[0]
+    stats["total_findings"] = conn.execute("SELECT COUNT(*) FROM findings").fetchone()[0]
+    stats["total_triggers"] = conn.execute("SELECT COUNT(*) FROM news_triggers").fetchone()[0]
+    stats["total_runs"] = conn.execute("SELECT COUNT(*) FROM agent_runs").fetchone()[0]
+    conn.close()
+    return stats
+
+@app.route("/")
+def index():
+    """Show pumps with their findings and triggers."""
+    conn = get_db()
+    pumps = []
+
+    if conn:
+        rows = conn.execute("""
+            SELECT * FROM pumps ORDER BY detected_at DESC LIMIT 50
+        """).fetchall()
+
+        for row in rows:
+            pump = dict(row)
+
+            # Get trigger
+            trigger = conn.execute("""
+                SELECT * FROM news_triggers WHERE pump_id = ? LIMIT 1
+            """, (pump["id"],)).fetchone()
+            pump["trigger"] = dict(trigger) if trigger else None
+
+            # Get findings
+            findings = conn.execute("""
+                SELECT * FROM findings WHERE pump_id = ? ORDER BY relevance_score DESC
+            """, (pump["id"],)).fetchall()
+            pump["findings"] = [dict(f) for f in findings]
+
+            pumps.append(pump)
+
+        conn.close()
+
+    return render_template_string(HTML_TEMPLATE,
+                                  pumps=pumps,
+                                  stats=get_stats(),
+                                  tab="pumps")
+
+@app.route("/runs")
+def runs():
+    """Show agent run history."""
+    conn = get_db()
+    runs_list = []
+
+    if conn:
+        rows = conn.execute("""
+            SELECT * FROM agent_runs ORDER BY started_at DESC LIMIT 100
+        """).fetchall()
+
+        for row in rows:
+            run = dict(row)
+            if run["completed_at"] and run["started_at"]:
+                # Calculate duration (simplified)
+                run["duration"] = "completed"
+            else:
+                run["duration"] = None
+            runs_list.append(run)
+
+        conn.close()
+
+    return render_template_string(HTML_TEMPLATE,
+                                  runs=runs_list,
+                                  stats=get_stats(),
+                                  tab="runs")
+
+if __name__ == "__main__":
+    print(f"Database path: {DB_PATH}")
+    app.run(host="0.0.0.0", port=5000, debug=True)
