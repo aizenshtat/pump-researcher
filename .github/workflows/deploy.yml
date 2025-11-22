@@ -82,5 +82,6 @@ jobs:
 
       - name: Verify deployment
         run: |
-          sleep 5
-          curl -sSf https://${{ secrets.SERVER_DOMAIN }} > /dev/null && echo "✓ Deployment successful: https://${{ secrets.SERVER_DOMAIN }}" || echo "⚠ Site not yet accessible (SSL may still be setting up)"
+          sleep 10
+          curl -sSf https://${{ secrets.SERVER_DOMAIN }} > /dev/null
+          echo "✓ Deployment successful: https://${{ secrets.SERVER_DOMAIN }}"
