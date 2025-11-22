@@ -1,0 +1,93 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:mcpservers.org)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(chmod:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "mcpServers": {
+    "reddit": {
+      "command": "uvx",
+      "args": [
+        "reddit-mcp"
+      ],
+      "env": {
+        "REDDIT_CLIENT_ID": "${REDDIT_CLIENT_ID}",
+        "REDDIT_CLIENT_SECRET": "${REDDIT_CLIENT_SECRET}"
+      }
+    },
+    "telegram": {
+      "command": "fast-mcp-telegram",
+      "env": {
+        "API_ID": "${TELEGRAM_API_ID}",
+        "API_HASH": "${TELEGRAM_API_HASH}",
+        "PHONE_NUMBER": "${TELEGRAM_PHONE_NUMBER}"
+      }
+    },
+    "twitter": {
+      "command": "node",
+      "args": [
+        ".mcp-servers/twitter-mcp-server/build/index.js"
+      ],
+      "env": {
+        "TWITTER_USERNAME": "${TWITTER_USERNAME}",
+        "TWITTER_PASSWORD": "${TWITTER_PASSWORD}",
+        "TWITTER_EMAIL": "${TWITTER_EMAIL}"
+      }
+    },
+    "discord": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/elyxlz/discord-mcp.git",
+        "discord-mcp"
+      ],
+      "env": {
+        "DISCORD_EMAIL": "${DISCORD_EMAIL}",
+        "DISCORD_PASSWORD": "${DISCORD_PASSWORD}",
+        "DISCORD_HEADLESS": "true"
+      }
+    },
+    "coinmarketcap": {
+      "command": "npx",
+      "args": [
+        "@shinzolabs/coinmarketcap-mcp"
+      ],
+      "env": {
+        "COINMARKETCAP_API_KEY": "${COINMARKETCAP_API_KEY}",
+        "SUBSCRIPTION_LEVEL": "${COINMARKETCAP_SUBSCRIPTION_LEVEL}"
+      }
+    },
+    "binance": {
+      "command": "npx",
+      "args": [
+        "binance-mcp-server"
+      ],
+      "env": {
+        "BINANCE_API_KEY": "${BINANCE_API_KEY}",
+        "BINANCE_API_SECRET": "${BINANCE_API_SECRET}",
+        "BINANCE_TESTNET": "${BINANCE_TESTNET}"
+      }
+    },
+    "grok": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        ".mcp-servers/Grok-MCP",
+        "run",
+        "python",
+        "main.py"
+      ],
+      "env": {
+        "XAI_API_KEY": "${XAI_API_KEY}"
+      }
+    }
+  }
+}
