@@ -112,16 +112,67 @@ echo ""
 echo "=== END PROMPT ==="
 echo ""
 
-# Execute with Claude Code in headless mode (no --print to see all output)
+# Execute with Claude Code in headless mode with streaming JSON output
 # If running as root, switch to agent user (required for --dangerously-skip-permissions)
 echo "Starting Claude Code..."
 if [ "$(id -u)" = "0" ] && id agent &>/dev/null; then
     chown agent:agent "$PROMPT_FILE"
     # Also need to give agent access to app directory
     chown -R agent:agent /app/data 2>/dev/null || true
-    su agent -c "cd /app && claude \"\$(cat $PROMPT_FILE)\" --allowedTools 'mcp__*' --dangerously-skip-permissions --verbose"
+    su agent -c "cd /app && claude \"\$(cat $PROMPT_FILE)\" --allowedTools 'mcp__*' --dangerously-skip-permissions --output-format stream-json" | while IFS= read -r line; do
+        # Parse JSON and format nicely
+        echo "$line" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        data = json.loads(line)
+        msg_type = data.get('type', '')
+        if msg_type == 'assistant':
+            content = data.get('message', {}).get('content', [])
+            for item in content:
+                if item.get('type') == 'text':
+                    print(f\"💭 {item.get('text', '')[:500]}\")
+                elif item.get('type') == 'tool_use':
+                    print(f\"🔧 Tool: {item.get('name', 'unknown')}\")
+                    inp = json.dumps(item.get('input', {}))[:200]
+                    print(f\"   Input: {inp}\")
+        elif msg_type == 'result':
+            result = data.get('result', '')
+            if result:
+                print(f\"📤 Result: {str(result)[:300]}\")
+        elif msg_type == 'error':
+            print(f\"❌ Error: {data.get('error', {}).get('message', 'Unknown')}\")
+    except:
+        print(line)
+" 2>&1
+    done
 else
-    claude "$(cat $PROMPT_FILE)" --allowedTools "mcp__*" --dangerously-skip-permissions --verbose
+    claude "$(cat $PROMPT_FILE)" --allowedTools "mcp__*" --dangerously-skip-permissions --output-format stream-json | while IFS= read -r line; do
+        echo "$line" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        data = json.loads(line)
+        msg_type = data.get('type', '')
+        if msg_type == 'assistant':
+            content = data.get('message', {}).get('content', [])
+            for item in content:
+                if item.get('type') == 'text':
+                    print(f\"💭 {item.get('text', '')[:500]}\")
+                elif item.get('type') == 'tool_use':
+                    print(f\"🔧 Tool: {item.get('name', 'unknown')}\")
+                    inp = json.dumps(item.get('input', {}))[:200]
+                    print(f\"   Input: {inp}\")
+        elif msg_type == 'result':
+            result = data.get('result', '')
+            if result:
+                print(f\"📤 Result: {str(result)[:300]}\")
+        elif msg_type == 'error':
+            print(f\"❌ Error: {data.get('error', {}).get('message', 'Unknown')}\")
+    except:
+        print(line)
+" 2>&1
+    done
 fi
 CLAUDE_EXIT=$?
 echo "Claude Code exited with code: $CLAUDE_EXIT"

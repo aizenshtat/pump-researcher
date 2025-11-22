@@ -66,41 +66,47 @@ Trigger types to identify:
 - unknown: Cannot determine
 
 ## Phase 3: Save to Database
-First, check if pump already exists to avoid duplicates:
+Check if pump already exists - if so, add new findings to it:
 
 ```python
 import sqlite3
 conn = sqlite3.connect('{db_path}')
 
-# Check if already exists
+# Check if already exists in last hour
 existing = conn.execute('SELECT id FROM pumps WHERE symbol = ? AND detected_at > datetime("now", "-1 hour")', (symbol,)).fetchone()
 if existing:
-    print(f"Pump for {{symbol}} already recorded recently, skipping")
+    pump_id = existing[0]
+    print(f"Adding findings to existing pump {{symbol}} (id={{pump_id}})")
 else:
-    # Save pump
+    # Save new pump
     cursor = conn.execute('''
         INSERT INTO pumps (symbol, price_change_pct, time_window_minutes, price_at_detection, volume_change_pct, market_cap, source)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     ''', (symbol, price_change_pct, time_window_minutes, price_at_detection, volume_change_pct, market_cap, source))
     pump_id = cursor.lastrowid
+    print(f"Created new pump {{symbol}} (id={{pump_id}})")
 
-    # Save findings (must have actual content, not just "search performed")
-    for finding in findings:
-        if finding.get('content') and len(finding['content']) > 50:
+# Save findings (must have actual content, not just "search performed")
+for finding in findings:
+    if finding.get('content') and len(finding['content']) > 50:
+        # Check if this exact finding already exists
+        exists = conn.execute('SELECT 1 FROM findings WHERE pump_id = ? AND content = ?', (pump_id, finding['content'])).fetchone()
+        if not exists:
             conn.execute('''
                 INSERT INTO findings (pump_id, source_type, source_url, content, relevance_score, sentiment)
                 VALUES (?, ?, ?, ?, ?, ?)
             ''', (pump_id, finding['source_type'], finding.get('source_url'), finding['content'], finding.get('relevance_score', 0.5), finding.get('sentiment', 'neutral')))
 
-    # Save trigger
+# Save or update trigger (keep the one with higher confidence)
+existing_trigger = conn.execute('SELECT confidence FROM news_triggers WHERE pump_id = ?', (pump_id,)).fetchone()
+if not existing_trigger or existing_trigger[0] < confidence:
+    conn.execute('DELETE FROM news_triggers WHERE pump_id = ?', (pump_id,))
     conn.execute('''
         INSERT INTO news_triggers (pump_id, trigger_type, description, confidence)
         VALUES (?, ?, ?, ?)
     ''', (pump_id, trigger_type, description, confidence))
 
-    conn.commit()
-    print(f"Saved pump {{symbol}} with id {{pump_id}}")
-
+conn.commit()
 conn.close()
 ```
 
