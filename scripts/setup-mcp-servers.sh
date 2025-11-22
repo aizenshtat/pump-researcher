@@ -31,7 +31,7 @@ echo "  - reddit-mcp (will be installed on first run via uvx)"
 
 # Telegram MCP
 echo "  - fast-mcp-telegram"
-pip install fast-mcp-telegram || uv pip install fast-mcp-telegram
+pip3 install fast-mcp-telegram --break-system-packages || uv pip install fast-mcp-telegram || true
 
 # Discord MCP (will be installed via uvx from git on first run)
 echo "  - discord-mcp (will be installed on first run via uvx)"
