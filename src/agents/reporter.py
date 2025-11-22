@@ -74,6 +74,7 @@ def get_telegram_report_prompt(pump: dict, investigation: dict) -> str:
 
     trigger = investigation.get("likely_trigger", {})
     trigger_type = trigger.get('trigger_type', 'Unknown').replace('_', ' ').title()
+    no_findings = "\n- No specific findings identified"
 
     return f"""
 Use the Telegram MCP to send this research finding to the configured chat.
@@ -90,7 +91,7 @@ Use the Telegram MCP to send this research finding to the configured chat.
 📝 {trigger.get('description', 'No description available')}
 🎯 **Confidence:** {trigger.get('confidence', 0) * 100:.0f}%
 
-**Key Findings:**{findings_summary if findings_summary else '\n- No specific findings identified'}
+**Key Findings:**{findings_summary if findings_summary else no_findings}
 
 **Summary:**
 {investigation.get('summary', 'No summary available')}
