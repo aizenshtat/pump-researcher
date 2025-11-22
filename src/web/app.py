@@ -16,8 +16,10 @@ app = Flask(__name__)
 
 # Track if agent is currently running
 agent_running = False
+agent_started_at = None
 agent_lock = threading.Lock()
 agent_logs = deque(maxlen=500)  # Keep last 500 lines
+AGENT_TIMEOUT = 600  # 10 minutes max
 DB_PATH = Path(__file__).parent.parent.parent / "data" / "research.db"
 
 HTML_TEMPLATE = """
@@ -488,12 +490,21 @@ def runs():
 @app.route("/api/run", methods=["POST"])
 def run_agent():
     """Trigger agent run."""
-    global agent_running, agent_logs
+    global agent_running, agent_logs, agent_started_at
+    import time
 
     with agent_lock:
+        # Check if agent is stuck (running for more than timeout)
+        if agent_running and agent_started_at:
+            elapsed = time.time() - agent_started_at
+            if elapsed > AGENT_TIMEOUT:
+                agent_logs.append(f"⚠ Previous run timed out after {int(elapsed)}s, resetting...")
+                agent_running = False
+
         if agent_running:
             return jsonify({"running": True, "message": "Agent is already running"})
         agent_running = True
+        agent_started_at = time.time()
         agent_logs.clear()
 
     def run_in_background():
