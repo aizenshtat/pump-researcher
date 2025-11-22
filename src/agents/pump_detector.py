@@ -1,23 +1,43 @@
 """
 Pump Detection Agent
 
-Monitors Binance and CoinMarketCap for price movements exceeding 5% in 1 hour.
+Monitors Binance and CoinMarketCap for price movements.
 This module provides prompts for Claude Code to execute via MCP servers.
 """
 
 import json
+import os
 from datetime import datetime
 from typing import Optional
 
-# Pump detection configuration
-PUMP_THRESHOLD_PCT = 5.0
-TIME_WINDOW_MINUTES = 60
+# Pump detection configuration (can be overridden via environment variables)
+PUMP_THRESHOLD_PCT = float(os.environ.get("PUMP_THRESHOLD_PCT", "5.0"))
+TIME_WINDOW_MINUTES = int(os.environ.get("PUMP_TIME_WINDOW_MINUTES", "60"))
 
-DETECT_PUMPS_PROMPT = """
+def get_detection_prompt(threshold_pct: float = None, time_window_minutes: int = None) -> str:
+    """
+    Get the pump detection prompt for Claude Code.
+
+    Args:
+        threshold_pct: Minimum price change percentage to detect (default: from env or 5.0)
+        time_window_minutes: Time window for detection (default: from env or 60)
+    """
+    threshold = threshold_pct if threshold_pct is not None else PUMP_THRESHOLD_PCT
+    window = time_window_minutes if time_window_minutes is not None else TIME_WINDOW_MINUTES
+
+    # Convert minutes to human-readable format
+    if window >= 1440:
+        time_desc = f"{window // 1440} day{'s' if window >= 2880 else ''}"
+    elif window >= 60:
+        time_desc = f"{window // 60} hour{'s' if window >= 120 else ''}"
+    else:
+        time_desc = f"{window} minute{'s' if window != 1 else ''}"
+
+    return f"""
 You are a crypto pump detection agent. Your task is to identify tokens that have pumped significantly.
 
 ## Detection Criteria
-- Price increase >= 5% in the last 1 hour
+- Price increase >= {threshold}% in the last {time_desc}
 - Use BOTH Binance and CoinMarketCap data for comprehensive coverage
 
 ## Instructions
@@ -25,12 +45,12 @@ You are a crypto pump detection agent. Your task is to identify tokens that have
 ### Step 1: Get Binance Data
 Use the Binance MCP server to:
 1. Get list of all trading pairs (focus on USDT pairs)
-2. Get 1-hour price changes for each
-3. Filter for tokens with >= 5% increase
+2. Get price changes for the last {time_desc}
+3. Filter for tokens with >= {threshold}% increase
 
 ### Step 2: Get CoinMarketCap Data
 Use the CoinMarketCap MCP server to:
-1. Get top gainers in the last 1 hour
+1. Get top gainers in the last {time_desc}
 2. Get market cap and volume data for context
 
 ### Step 3: Combine and Deduplicate
@@ -42,15 +62,15 @@ Use the CoinMarketCap MCP server to:
 Return a JSON array of detected pumps:
 ```json
 [
-  {
+  {{
     "symbol": "BTC",
     "price_change_pct": 7.5,
     "volume_change_pct": 150.2,
     "market_cap": 1200000000000,
     "price_at_detection": 65000.50,
     "source": "both",
-    "time_window_minutes": 60
-  }
+    "time_window_minutes": {window}
+  }}
 ]
 ```
 
@@ -58,10 +78,6 @@ If no pumps detected, return an empty array: []
 
 Execute now and return ONLY the JSON output.
 """
-
-def get_detection_prompt() -> str:
-    """Get the pump detection prompt for Claude Code."""
-    return DETECT_PUMPS_PROMPT
 
 def parse_pump_results(json_str: str) -> list[dict]:
     """Parse pump detection results from Claude Code output."""

@@ -5,7 +5,9 @@ Main script that coordinates the pump detection and investigation workflow.
 This generates prompts for Claude Code to execute in headless mode.
 """
 
+import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -13,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from db.init import init_db, DB_PATH
-from agents.pump_detector import get_detection_prompt, parse_pump_results
+from agents.pump_detector import get_detection_prompt, parse_pump_results, PUMP_THRESHOLD_PCT, TIME_WINDOW_MINUTES
 from agents.news_investigator import get_investigation_prompt, parse_investigation_results
 from agents.reporter import (
     save_pump_to_db, save_findings_to_db, save_trigger_to_db,
@@ -64,22 +66,41 @@ Execute each phase sequentially. After completing all phases, return a final sum
 Begin execution now.
 """
 
-def generate_full_prompt() -> str:
-    """Generate the complete orchestrator prompt for Claude Code."""
-    from agents.pump_detector import get_detection_prompt
+def generate_full_prompt(threshold_pct: float = None, time_window_minutes: int = None) -> str:
+    """
+    Generate the complete orchestrator prompt for Claude Code.
 
+    Args:
+        threshold_pct: Minimum price change percentage to detect
+        time_window_minutes: Time window for detection in minutes
+    """
     return ORCHESTRATOR_PROMPT.format(
         db_path=DB_PATH,
-        detection_prompt=get_detection_prompt()
+        detection_prompt=get_detection_prompt(threshold_pct, time_window_minutes)
     )
 
 def main():
     """Main entry point - prints the orchestrator prompt."""
+    parser = argparse.ArgumentParser(description="Pump Research Agent Orchestrator")
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help=f"Minimum price change %% to detect (default: {PUMP_THRESHOLD_PCT})"
+    )
+    parser.add_argument(
+        "--window",
+        type=int,
+        default=None,
+        help=f"Time window in minutes (default: {TIME_WINDOW_MINUTES})"
+    )
+    args = parser.parse_args()
+
     # Initialize database
     init_db()
 
     # Generate and print the full prompt
-    prompt = generate_full_prompt()
+    prompt = generate_full_prompt(args.threshold, args.window)
     print(prompt)
 
 if __name__ == "__main__":

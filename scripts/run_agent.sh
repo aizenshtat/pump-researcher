@@ -11,15 +11,27 @@ cd "$PROJECT_DIR"
 # Parse arguments
 SETUP_ONLY=false
 SKIP_SETUP=false
+THRESHOLD=""
+WINDOW=""
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --setup-only) SETUP_ONLY=true ;;
         --skip-setup) SKIP_SETUP=true ;;
+        --threshold) THRESHOLD="$2"; shift ;;
+        --threshold=*) THRESHOLD="${1#*=}" ;;
+        --window) WINDOW="$2"; shift ;;
+        --window=*) WINDOW="${1#*=}" ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
-            echo "  --setup-only   Only run setup, don't execute agent"
-            echo "  --skip-setup   Skip setup, only run agent"
-            echo "  --help         Show this help"
+            echo "  --setup-only        Only run setup, don't execute agent"
+            echo "  --skip-setup        Skip setup, only run agent"
+            echo "  --threshold PCT     Minimum price change % to detect (default: 5.0)"
+            echo "  --window MINUTES    Time window in minutes (default: 60)"
+            echo "  --help              Show this help"
+            echo ""
+            echo "Examples:"
+            echo "  $0 --threshold 10 --window 60    # 10% pumps in 1 hour"
+            echo "  $0 --threshold 20 --window 1440  # 20% pumps in 24 hours"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -75,8 +87,19 @@ fi
 # Run agent phase
 echo "=== Running Pump Research Agent ==="
 
+# Build orchestrator arguments
+ORCH_ARGS=""
+if [ -n "$THRESHOLD" ]; then
+    ORCH_ARGS="$ORCH_ARGS --threshold $THRESHOLD"
+    echo "Using threshold: ${THRESHOLD}%"
+fi
+if [ -n "$WINDOW" ]; then
+    ORCH_ARGS="$ORCH_ARGS --window $WINDOW"
+    echo "Using time window: ${WINDOW} minutes"
+fi
+
 # Generate the prompt
-PROMPT=$(python src/agents/orchestrator.py)
+PROMPT=$(python src/agents/orchestrator.py $ORCH_ARGS)
 
 # Execute with Claude Code in headless mode
 # Same flags as CI/CD workflow
