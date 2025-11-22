@@ -20,59 +20,56 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
-
-      - name: Cache MCP servers
+      - name: Cache Docker layers
         uses: actions/cache@v4
         with:
-          path: |
-            .mcp-servers
-            ~/.cache/uv
-            ~/.npm
-          key: mcp-servers-${{ runner.os }}-${{ hashFiles('scripts/setup-mcp-servers.sh') }}
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: pump-researcher:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
       - name: Run Pump Research Agent
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Reddit
-          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
-          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
-          # Telegram
-          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
-          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-          TELEGRAM_PHONE_NUMBER: ${{ secrets.TELEGRAM_PHONE_NUMBER }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          # Twitter
-          TWITTER_USERNAME: ${{ secrets.TWITTER_USERNAME }}
-          TWITTER_PASSWORD: ${{ secrets.TWITTER_PASSWORD }}
-          TWITTER_EMAIL: ${{ secrets.TWITTER_EMAIL }}
-          # Discord
-          DISCORD_EMAIL: ${{ secrets.DISCORD_EMAIL }}
-          DISCORD_PASSWORD: ${{ secrets.DISCORD_PASSWORD }}
-          # CoinMarketCap
-          COINMARKETCAP_API_KEY: ${{ secrets.COINMARKETCAP_API_KEY }}
-          COINMARKETCAP_SUBSCRIPTION_LEVEL: ${{ secrets.COINMARKETCAP_SUBSCRIPTION_LEVEL }}
-          # Binance
-          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
-          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
-          BINANCE_TESTNET: 'false'
-          # Grok/xAI
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-        run: ./scripts/run_agent.sh
+        run: |
+          docker run --rm \
+            -e ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+            -e REDDIT_CLIENT_ID="${{ secrets.REDDIT_CLIENT_ID }}" \
+            -e REDDIT_CLIENT_SECRET="${{ secrets.REDDIT_CLIENT_SECRET }}" \
+            -e TELEGRAM_API_ID="${{ secrets.TELEGRAM_API_ID }}" \
+            -e TELEGRAM_API_HASH="${{ secrets.TELEGRAM_API_HASH }}" \
+            -e TELEGRAM_PHONE_NUMBER="${{ secrets.TELEGRAM_PHONE_NUMBER }}" \
+            -e TELEGRAM_CHAT_ID="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -e TWITTER_USERNAME="${{ secrets.TWITTER_USERNAME }}" \
+            -e TWITTER_PASSWORD="${{ secrets.TWITTER_PASSWORD }}" \
+            -e TWITTER_EMAIL="${{ secrets.TWITTER_EMAIL }}" \
+            -e DISCORD_EMAIL="${{ secrets.DISCORD_EMAIL }}" \
+            -e DISCORD_PASSWORD="${{ secrets.DISCORD_PASSWORD }}" \
+            -e DISCORD_HEADLESS=true \
+            -e COINMARKETCAP_API_KEY="${{ secrets.COINMARKETCAP_API_KEY }}" \
+            -e COINMARKETCAP_SUBSCRIPTION_LEVEL="${{ secrets.COINMARKETCAP_SUBSCRIPTION_LEVEL }}" \
+            -e BINANCE_API_KEY="${{ secrets.BINANCE_API_KEY }}" \
+            -e BINANCE_API_SECRET="${{ secrets.BINANCE_API_SECRET }}" \
+            -e BINANCE_TESTNET=false \
+            -e XAI_API_KEY="${{ secrets.XAI_API_KEY }}" \
+            -v ${{ github.workspace }}/data:/app/data \
+            pump-researcher:latest
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       - name: Upload database artifact
         uses: actions/upload-artifact@v4
