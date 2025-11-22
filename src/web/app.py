@@ -466,7 +466,7 @@ HTML_TEMPLATE = """
             contentDiv.className = 'collapsible-content';
             const pre = document.createElement('pre');
             pre.style.cssText = 'margin:0;white-space:pre-wrap;word-break:break-all;';
-            pre.textContent = content.join('\n');
+            pre.textContent = content.join('\\n');
             contentDiv.appendChild(pre);
 
             div.appendChild(header);
