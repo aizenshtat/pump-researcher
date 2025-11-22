@@ -99,7 +99,7 @@ if [ -n "$WINDOW" ]; then
 fi
 
 # Generate the prompt
-PROMPT=$(python src/agents/orchestrator.py $ORCH_ARGS)
+PROMPT=$(python3 src/agents/orchestrator.py $ORCH_ARGS)
 
 # Execute with Claude Code in headless mode
 # Same flags as CI/CD workflow
