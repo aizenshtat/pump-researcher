@@ -805,12 +805,33 @@ def run_agent():
             agent_logs.append(f"✗ Error: {str(e)}")
             status = "failed"
 
-        # Update agent run record with logs
+        # Update agent run record with logs (filter sensitive data)
         if run_id:
             try:
                 conn = get_db()
                 if conn:
-                    logs_text = '\n'.join(agent_logs)
+                    # Filter out sensitive data from logs
+                    import re
+                    filtered_logs = []
+                    sensitive_patterns = [
+                        r'API_KEY["\s:=]+[^\s"]+',
+                        r'API_SECRET["\s:=]+[^\s"]+',
+                        r'API_HASH["\s:=]+[^\s"]+',
+                        r'PASSWORD["\s:=]+[^\s"]+',
+                        r'TOKEN["\s:=]+[^\s"]+',
+                        r'SECRET["\s:=]+[^\s"]+',
+                        r'"api_key":\s*"[^"]+"',
+                        r'"api_secret":\s*"[^"]+"',
+                        r'"password":\s*"[^"]+"',
+                        r'"token":\s*"[^"]+"',
+                    ]
+                    for log in agent_logs:
+                        filtered = log
+                        for pattern in sensitive_patterns:
+                            filtered = re.sub(pattern, '[REDACTED]', filtered, flags=re.IGNORECASE)
+                        filtered_logs.append(filtered)
+
+                    logs_text = '\n'.join(filtered_logs)
                     conn.execute("""
                         UPDATE agent_runs
                         SET status = ?, completed_at = datetime('now'),
