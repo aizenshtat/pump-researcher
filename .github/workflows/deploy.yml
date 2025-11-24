@@ -27,7 +27,7 @@ jobs:
 
       - name: Copy files to server
         run: |
-          scp -r docker-compose.yml docker-compose.prod.yml Dockerfile Dockerfile.prod \
+          scp -r docker-compose.yml docker-compose.yml Dockerfile Dockerfile.prod \
             requirements.txt src scripts deploy alembic \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/opt/pump-researcher/
 
@@ -71,9 +71,9 @@ jobs:
         run: |
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
             cd /opt/pump-researcher
-            docker compose -f docker-compose.prod.yml build
-            docker compose -f docker-compose.prod.yml up -d
-            docker compose -f docker-compose.prod.yml ps
+            docker compose -f docker-compose.yml build
+            docker compose -f docker-compose.yml up -d
+            docker compose -f docker-compose.yml ps
             # Cleanup old images and build cache
             docker system prune -af
           "
