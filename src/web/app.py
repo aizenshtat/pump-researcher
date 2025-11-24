@@ -1,24 +1,30 @@
 """
-Simple Flask web interface for viewing pump research results.
+Flask web interface for viewing pump research results.
 """
 
-import json
-import sqlite3
-import subprocess
-import threading
+import os
+import re
 from datetime import datetime
-from pathlib import Path
-from collections import deque
 
-from flask import Flask, render_template_string, jsonify, request, Response
+from flask import Flask, render_template_string, jsonify, request
 
 app = Flask(__name__)
 
-# Track if agent is currently running
-agent_process = None
-agent_lock = threading.Lock()
-agent_logs = deque(maxlen=500)  # Keep last 500 lines
-DB_PATH = Path(__file__).parent.parent.parent / "data" / "research.db"
+# Database configuration
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://pump:pump@postgres:5432/pump_researcher")
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# Initialize SQLAlchemy
+from .models import db, Pump, Finding, NewsTrigger, AgentRun
+db.init_app(app)
+
+# Create tables on startup
+with app.app_context():
+    db.create_all()
+
+# Celery task import
+from src.worker.tasks import run_pump_agent
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -619,70 +625,49 @@ HTML_TEMPLATE = """
 </html>
 """
 
-def get_db():
-    """Get database connection."""
-    if not DB_PATH.exists():
-        return None
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
 def get_stats():
     """Get dashboard statistics."""
-    conn = get_db()
-    if not conn:
-        return {"total_pumps": 0, "total_findings": 0, "total_triggers": 0, "total_runs": 0}
-
-    stats = {}
-    stats["total_pumps"] = conn.execute("SELECT COUNT(*) FROM pumps").fetchone()[0]
-    stats["total_findings"] = conn.execute("SELECT COUNT(*) FROM findings").fetchone()[0]
-    stats["total_triggers"] = conn.execute("SELECT COUNT(*) FROM news_triggers").fetchone()[0]
-    stats["total_runs"] = conn.execute("SELECT COUNT(*) FROM agent_runs").fetchone()[0]
-    conn.close()
-    return stats
+    return {
+        "total_pumps": db.session.query(Pump).count(),
+        "total_findings": db.session.query(Finding).count(),
+        "total_triggers": db.session.query(NewsTrigger).count(),
+        "total_runs": db.session.query(AgentRun).count()
+    }
 
 @app.route("/")
 def index():
     """Show pumps grouped by symbol with their findings and triggers."""
-    conn = get_db()
     grouped_pumps = {}
 
-    if conn:
-        rows = conn.execute("""
-            SELECT * FROM pumps ORDER BY detected_at DESC LIMIT 100
-        """).fetchall()
+    pumps = Pump.query.order_by(Pump.detected_at.desc()).limit(100).all()
 
-        for row in rows:
-            pump = dict(row)
+    for pump in pumps:
+        pump_data = {
+            "id": pump.id,
+            "symbol": pump.symbol,
+            "price_change_pct": pump.price_change_pct,
+            "detected_at": pump.detected_at,
+            "price_at_detection": pump.price_at_detection,
+            "volume_change_pct": pump.volume_change_pct,
+            "market_cap": pump.market_cap,
+            "trigger": pump.trigger,
+            "findings": pump.findings
+        }
 
-            # Get trigger
-            trigger = conn.execute("""
-                SELECT * FROM news_triggers WHERE pump_id = ? LIMIT 1
-            """, (pump["id"],)).fetchone()
-            pump["trigger"] = dict(trigger) if trigger else None
-
-            # Get findings
-            findings = conn.execute("""
-                SELECT * FROM findings WHERE pump_id = ? ORDER BY relevance_score DESC
-            """, (pump["id"],)).fetchall()
-            pump["findings"] = [dict(f) for f in findings]
-
-            # Group by symbol
-            symbol = pump["symbol"]
-            if symbol not in grouped_pumps:
-                grouped_pumps[symbol] = []
-            grouped_pumps[symbol].append(pump)
-
-        conn.close()
+        # Group by symbol
+        symbol = pump.symbol
+        if symbol not in grouped_pumps:
+            grouped_pumps[symbol] = []
+        grouped_pumps[symbol].append(pump_data)
 
     # Convert to list of groups, sorted by most recent pump
     pump_groups = []
-    for symbol, pumps in grouped_pumps.items():
+    for symbol, pumps_list in grouped_pumps.items():
         pump_groups.append({
             "symbol": symbol,
-            "pumps": pumps,
-            "count": len(pumps),
-            "latest": pumps[0]  # Already sorted by detected_at DESC
+            "pumps": pumps_list,
+            "count": len(pumps_list),
+            "latest": pumps_list[0]  # Already sorted by detected_at DESC
         })
 
     # Sort by latest detection
@@ -696,24 +681,21 @@ def index():
 @app.route("/runs")
 def runs():
     """Show agent run history."""
-    conn = get_db()
     runs_list = []
 
-    if conn:
-        rows = conn.execute("""
-            SELECT * FROM agent_runs ORDER BY started_at DESC LIMIT 100
-        """).fetchall()
+    agent_runs = AgentRun.query.order_by(AgentRun.started_at.desc()).limit(100).all()
 
-        for row in rows:
-            run = dict(row)
-            if run["completed_at"] and run["started_at"]:
-                # Calculate duration (simplified)
-                run["duration"] = "completed"
-            else:
-                run["duration"] = None
-            runs_list.append(run)
-
-        conn.close()
+    for run in agent_runs:
+        run_data = {
+            "id": run.id,
+            "started_at": run.started_at,
+            "completed_at": run.completed_at,
+            "status": run.status,
+            "pumps_detected": run.pumps_detected,
+            "findings_count": run.findings_count,
+            "duration": "completed" if run.completed_at and run.started_at else None
+        }
+        runs_list.append(run_data)
 
     return render_template_string(HTML_TEMPLATE,
                                   runs=runs_list,
@@ -721,164 +703,54 @@ def runs():
                                   tab="runs")
 
 @app.route("/api/run", methods=["POST"])
-def run_agent():
-    """Trigger agent run."""
-    global agent_process, agent_logs
+def api_run_agent():
+    """Trigger agent run via Celery."""
+    # Check if there's already a running task
+    running = AgentRun.query.filter_by(status="running").first()
+    if running:
+        return jsonify({"running": True, "message": "Agent is already running"})
 
-    with agent_lock:
-        # Check if process is actually running
-        if agent_process is not None and agent_process.poll() is None:
-            return jsonify({"running": True, "message": "Agent is already running"})
+    # Create agent run record
+    agent_run = AgentRun(status="queued")
+    db.session.add(agent_run)
+    db.session.commit()
+    run_id = agent_run.id
 
-        agent_logs.clear()
-        agent_logs.append("Starting pump research agent...")
+    # Queue the Celery task
+    run_pump_agent.delay(run_id)
 
-        # Create agent run record
-        run_id = None
-        try:
-            conn = get_db()
-            if conn:
-                cursor = conn.execute("INSERT INTO agent_runs (status) VALUES ('running')")
-                run_id = cursor.lastrowid
-                conn.commit()
-                conn.close()
-                agent_logs.append(f"Agent run #{run_id} started")
-        except Exception as e:
-            agent_logs.append(f"Warning: Could not create run record: {e}")
-
-        try:
-            # Start the agent process
-            agent_process = subprocess.Popen(
-                ["./scripts/run_agent.sh", "--skip-setup"],
-                cwd=Path(__file__).parent.parent.parent,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1
-            )
-            agent_logs.append(f"Process started with PID {agent_process.pid}")
-        except Exception as e:
-            agent_logs.append(f"✗ Failed to start process: {str(e)}")
-            return jsonify({"success": False, "error": str(e)})
-
-    def stream_output(run_id):
-        global agent_process
-        pumps_detected = 0
-        findings_count = 0
-
-        try:
-            # Stream output to logs
-            for line in iter(agent_process.stdout.readline, ''):
-                if line:
-                    agent_logs.append(line.rstrip())
-                    # Try to extract stats from output
-                    if '"pumps_detected":' in line:
-                        try:
-                            import re
-                            match = re.search(r'"pumps_detected":\s*(\d+)', line)
-                            if match:
-                                pumps_detected = int(match.group(1))
-                        except:
-                            pass
-                    if '"findings_count":' in line:
-                        try:
-                            import re
-                            match = re.search(r'"findings_count":\s*(\d+)', line)
-                            if match:
-                                findings_count = int(match.group(1))
-                        except:
-                            pass
-
-            agent_process.wait(timeout=600)
-
-            status = "completed" if agent_process.returncode == 0 else "failed"
-            if agent_process.returncode == 0:
-                agent_logs.append("✓ Agent completed successfully")
-            else:
-                agent_logs.append(f"✗ Agent exited with code {agent_process.returncode}")
-
-        except subprocess.TimeoutExpired:
-            agent_logs.append("✗ Agent timed out after 10 minutes")
-            agent_process.kill()
-            status = "timeout"
-        except Exception as e:
-            agent_logs.append(f"✗ Error: {str(e)}")
-            status = "failed"
-
-        # Update agent run record with logs (filter sensitive data)
-        if run_id:
-            try:
-                conn = get_db()
-                if conn:
-                    # Filter out sensitive data from logs
-                    import re
-                    filtered_logs = []
-                    sensitive_patterns = [
-                        r'API_KEY["\s:=]+[^\s"]+',
-                        r'API_SECRET["\s:=]+[^\s"]+',
-                        r'API_HASH["\s:=]+[^\s"]+',
-                        r'PASSWORD["\s:=]+[^\s"]+',
-                        r'TOKEN["\s:=]+[^\s"]+',
-                        r'SECRET["\s:=]+[^\s"]+',
-                        r'"api_key":\s*"[^"]+"',
-                        r'"api_secret":\s*"[^"]+"',
-                        r'"password":\s*"[^"]+"',
-                        r'"token":\s*"[^"]+"',
-                    ]
-                    for log in agent_logs:
-                        filtered = log
-                        for pattern in sensitive_patterns:
-                            filtered = re.sub(pattern, '[REDACTED]', filtered, flags=re.IGNORECASE)
-                        filtered_logs.append(filtered)
-
-                    logs_text = '\n'.join(filtered_logs)
-                    conn.execute("""
-                        UPDATE agent_runs
-                        SET status = ?, completed_at = datetime('now'),
-                            pumps_detected = ?, findings_count = ?, logs = ?
-                        WHERE id = ?
-                    """, (status, pumps_detected, findings_count, logs_text, run_id))
-                    conn.commit()
-                    conn.close()
-            except Exception as e:
-                agent_logs.append(f"Warning: Could not update run record: {e}")
-
-    # Start streaming in background thread (don't wait - let it run async)
-    thread = threading.Thread(target=stream_output, args=(run_id,), daemon=True)
-    thread.start()
-
-    return jsonify({"success": True, "message": "Agent started"})
+    return jsonify({"success": True, "message": "Agent queued", "run_id": run_id})
 
 @app.route("/api/logs")
 def get_logs():
-    """Get agent logs since given index."""
+    """Get logs from the most recent running or queued task."""
     from_index = int(request.args.get('from', 0))
-    logs_list = list(agent_logs)
+
+    # Get the most recent run
+    run = AgentRun.query.order_by(AgentRun.started_at.desc()).first()
+    if not run or not run.logs:
+        return jsonify({"logs": [], "index": 0})
+
+    logs_list = run.logs.split('\n') if run.logs else []
     new_logs = logs_list[from_index:] if from_index < len(logs_list) else []
     return jsonify({"logs": new_logs, "index": len(logs_list)})
 
 @app.route("/api/status")
 def agent_status():
     """Check if agent is running."""
-    running = agent_process is not None and agent_process.poll() is None
+    running = AgentRun.query.filter(AgentRun.status.in_(["running", "queued"])).first() is not None
     return jsonify({"running": running})
 
 @app.route("/api/run/<int:run_id>/logs")
 def get_run_logs(run_id):
     """Get logs for a specific agent run."""
-    conn = get_db()
-    if not conn:
-        return jsonify({"error": "Database not found"}), 404
+    run = AgentRun.query.get(run_id)
 
-    row = conn.execute("SELECT logs FROM agent_runs WHERE id = ?", (run_id,)).fetchone()
-    conn.close()
-
-    if not row:
+    if not run:
         return jsonify({"error": "Run not found"}), 404
 
-    logs = row["logs"] or ""
+    logs = run.logs or ""
     return jsonify({"logs": logs.split('\n') if logs else []})
 
 if __name__ == "__main__":
-    print(f"Database path: {DB_PATH}")
     app.run(host="0.0.0.0", port=5000, debug=True)

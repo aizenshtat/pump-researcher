@@ -5,13 +5,38 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
+from contextlib import contextmanager
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from .celery_app import celery_app
-from src.api.database import get_db_session
-from src.api.models import AgentRun
-from src.api.config import get_settings
 
-settings = get_settings()
+# Database setup
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://pump:pump@postgres:5432/pump_researcher")
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Import models after engine setup to avoid circular imports
+from src.web.models import AgentRun
+
+# Settings from environment
+PUMP_THRESHOLD_PCT = float(os.getenv("PUMP_THRESHOLD_PCT", "5.0"))
+PUMP_TIME_WINDOW_MINUTES = int(os.getenv("PUMP_TIME_WINDOW_MINUTES", "60"))
+
+
+@contextmanager
+def get_db_session():
+    """Context manager for database session."""
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 @celery_app.task(bind=True)
@@ -33,14 +58,14 @@ def run_pump_agent(self, run_id: int):
 
         try:
             logs.append(f"Starting pump research agent (run #{run_id})")
-            logs.append(f"Threshold: {settings.pump_threshold_pct}%")
-            logs.append(f"Time window: {settings.pump_time_window_minutes} minutes")
+            logs.append(f"Threshold: {PUMP_THRESHOLD_PCT}%")
+            logs.append(f"Time window: {PUMP_TIME_WINDOW_MINUTES} minutes")
 
             # Generate the orchestrator prompt
             from src.agents.orchestrator import generate_full_prompt
             prompt = generate_full_prompt(
-                settings.pump_threshold_pct,
-                settings.pump_time_window_minutes
+                PUMP_THRESHOLD_PCT,
+                PUMP_TIME_WINDOW_MINUTES
             )
             logs.append(f"Prompt generated ({len(prompt)} bytes)")
 
