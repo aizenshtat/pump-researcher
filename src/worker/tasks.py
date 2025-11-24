@@ -51,11 +51,11 @@ def run_pump_agent(self, run_id: int):
             # Run Claude Code
             logs.append("Starting Claude Code...")
 
+            # Only allow MCP tools - no file access, no bash
             cmd = [
                 "claude",
                 prompt,
                 "--allowedTools", "mcp__*",
-                "--dangerously-skip-permissions",
                 "--output-format", "stream-json",
                 "--verbose"
             ]

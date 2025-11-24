@@ -61,6 +61,9 @@ echo "  - @shinzolabs/coinmarketcap-mcp (will be installed on first run via npx)
 # Binance MCP (via npx, no pre-install needed)
 echo "  - binance-mcp-server (will be installed on first run via npx)"
 
+# PostgreSQL MCP (via npx, no pre-install needed)
+echo "  - @anthropic/mcp-server-postgres (will be installed on first run via npx)"
+
 # Install Playwright for Discord MCP
 echo "Installing Playwright browsers for Discord MCP..."
 uvx playwright install chromium || true

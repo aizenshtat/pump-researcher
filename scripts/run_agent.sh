@@ -120,11 +120,13 @@ if [ "$(id -u)" = "0" ] && id agent &>/dev/null; then
     # Also need to give agent access to app directory
     chown -R agent:agent /app/data 2>/dev/null || true
     # Use unbuffered output with stdbuf and pass through raw JSON
-    su agent -c "cd /app && stdbuf -oL claude \"\$(cat $PROMPT_FILE)\" --allowedTools 'mcp__*' --dangerously-skip-permissions --output-format stream-json --verbose" 2>&1
+    # Only allow MCP tools - no file access, no bash
+    su agent -c "cd /app && stdbuf -oL claude \"\$(cat $PROMPT_FILE)\" --allowedTools 'mcp__*' --output-format stream-json --verbose" 2>&1
     CLAUDE_EXIT=$?
 else
     # Use unbuffered output
-    stdbuf -oL claude "$(cat $PROMPT_FILE)" --allowedTools "mcp__*" --dangerously-skip-permissions --output-format stream-json --verbose 2>&1
+    # Only allow MCP tools - no file access, no bash
+    stdbuf -oL claude "$(cat $PROMPT_FILE)" --allowedTools "mcp__*" --output-format stream-json --verbose 2>&1
     CLAUDE_EXIT=$?
 fi
 echo "Claude Code exited with code: $CLAUDE_EXIT"

@@ -14,7 +14,7 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from db.init import init_db, DB_PATH
+from db.init import init_db
 from agents.pump_detector import get_detection_prompt, parse_pump_results, PUMP_THRESHOLD_PCT, TIME_WINDOW_MINUTES
 from agents.news_investigator import get_investigation_prompt, parse_investigation_results
 from agents.reporter import (
@@ -66,48 +66,38 @@ Trigger types to identify:
 - unknown: Cannot determine
 
 ## Phase 3: Save to Database
-Check if pump already exists - if so, add new findings to it:
+Use the **postgres MCP** `query` and `execute` tools to save data. Do NOT use Python or Bash.
 
-```python
-import sqlite3
-conn = sqlite3.connect('{db_path}')
+### Check if pump exists
+```sql
+SELECT id FROM pumps WHERE symbol = 'SYMBOL' AND detected_at > NOW() - INTERVAL '1 hour'
+```
 
-# Check if already exists in last hour
-existing = conn.execute('SELECT id FROM pumps WHERE symbol = ? AND detected_at > datetime("now", "-1 hour")', (symbol,)).fetchone()
-if existing:
-    pump_id = existing[0]
-    print(f"Adding findings to existing pump {{symbol}} (id={{pump_id}})")
-else:
-    # Save new pump
-    cursor = conn.execute('''
-        INSERT INTO pumps (symbol, price_change_pct, time_window_minutes, price_at_detection, volume_change_pct, market_cap, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (symbol, price_change_pct, time_window_minutes, price_at_detection, volume_change_pct, market_cap, source))
-    pump_id = cursor.lastrowid
-    print(f"Created new pump {{symbol}} (id={{pump_id}})")
+### If pump doesn't exist, create it
+```sql
+INSERT INTO pumps (symbol, price_change_pct, time_window_minutes, price_at_detection, volume_change_pct, market_cap, source)
+VALUES ('SYMBOL', 10.5, 60, 1.23, 50.0, 1000000, 'binance')
+RETURNING id
+```
 
-# Save findings (must have actual content, not just "search performed")
-for finding in findings:
-    if finding.get('content') and len(finding['content']) > 50:
-        # Check if this exact finding already exists
-        exists = conn.execute('SELECT 1 FROM findings WHERE pump_id = ? AND content = ?', (pump_id, finding['content'])).fetchone()
-        if not exists:
-            conn.execute('''
-                INSERT INTO findings (pump_id, source_type, source_url, content, relevance_score, sentiment)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (pump_id, finding['source_type'], finding.get('source_url'), finding['content'], finding.get('relevance_score', 0.5), finding.get('sentiment', 'neutral')))
+### Save findings (only if content length > 50)
+```sql
+INSERT INTO findings (pump_id, source_type, source_url, content, relevance_score, sentiment)
+VALUES (PUMP_ID, 'twitter', 'https://...', 'Actual content here...', 0.8, 'positive')
+ON CONFLICT DO NOTHING
+```
 
-# Save or update trigger (keep the one with higher confidence)
-existing_trigger = conn.execute('SELECT confidence FROM news_triggers WHERE pump_id = ?', (pump_id,)).fetchone()
-if not existing_trigger or existing_trigger[0] < confidence:
-    conn.execute('DELETE FROM news_triggers WHERE pump_id = ?', (pump_id,))
-    conn.execute('''
-        INSERT INTO news_triggers (pump_id, trigger_type, description, confidence)
-        VALUES (?, ?, ?, ?)
-    ''', (pump_id, trigger_type, description, confidence))
+### Save trigger (replace if higher confidence)
+```sql
+-- First check existing
+SELECT confidence FROM news_triggers WHERE pump_id = PUMP_ID
 
-conn.commit()
-conn.close()
+-- Delete if new confidence is higher
+DELETE FROM news_triggers WHERE pump_id = PUMP_ID
+
+-- Insert new trigger
+INSERT INTO news_triggers (pump_id, trigger_type, description, confidence)
+VALUES (PUMP_ID, 'exchange_listing', 'Description of trigger', 0.85)
 ```
 
 ## Phase 4: Send Telegram Alert
@@ -157,7 +147,6 @@ def generate_full_prompt(threshold_pct: float = None, time_window_minutes: int =
         time_window_minutes: Time window for detection in minutes
     """
     return ORCHESTRATOR_PROMPT.format(
-        db_path=DB_PATH,
         detection_prompt=get_detection_prompt(threshold_pct, time_window_minutes)
     )
 

@@ -90,6 +90,14 @@
       "env": {
         "XAI_API_KEY": "${XAI_API_KEY}"
       }
+    },
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic/mcp-server-postgres",
+        "${DATABASE_URL}"
+      ]
     }
   }
 }
