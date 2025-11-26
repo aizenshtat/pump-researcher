@@ -32,6 +32,9 @@ echo "  - reddit-mcp (will be installed on first run via uvx)"
 
 # Telegram MCP
 echo "  - fast-mcp-telegram"
+# Install pyaes first (sometimes fails to build from source)
+pip3 install --only-binary :all: pyaes --break-system-packages 2>/dev/null || \
+    pip3 install pyaes --break-system-packages 2>/dev/null || true
 pip3 install fast-mcp-telegram --break-system-packages || uv pip install fast-mcp-telegram || true
 
 # Discord MCP (will be installed via uvx from git on first run)

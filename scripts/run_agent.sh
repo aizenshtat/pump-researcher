@@ -84,6 +84,18 @@ if [ "$SETUP_ONLY" = true ]; then
     exit 0
 fi
 
+# Validate configuration
+echo "=== Validating Configuration ==="
+python3 -c "
+import sys
+sys.path.insert(0, '.')
+from src.utils.validate_config import validate_all, print_validation_report
+results = validate_all()
+if not print_validation_report(results):
+    print('ERROR: Please configure required credentials in .env file')
+    sys.exit(1)
+" || { echo "Configuration validation failed"; exit 1; }
+
 # Run agent phase
 echo "=== Running Pump Research Agent ==="
 
